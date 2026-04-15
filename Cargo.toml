@@ -1,0 +1,48 @@
+[package]
+name = "io-discovery"
+description = "I/O-free discovery client library"
+version = "0.0.1"
+authors = ["Clément DOUIN <pimalaya.org@posteo.net>"]
+rust-version = "1.87"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+categories = ["network-programming", "no-std"]
+keywords = ["dns", "io-free", "coroutine", "no-std", "sans-io"]
+homepage = "https://pimalaya.org"
+documentation = "https://docs.rs/io-discovery/latest/io_discovery"
+repository = "https://github.com/pimalaya/io-discovery"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["isp", "cli", "rustls-ring"]
+cli = ["dep:anyhow", "dep:clap", "io-socket/std-stream", "pimalaya-toolbox/terminal"]
+isp = ["dep:io-http", "dep:io-socket", "dep:url", "pimalaya-toolbox/http"]
+rustls-ring = ["pimalaya-toolbox/rustls-ring"]
+rustls-aws = ["pimalaya-toolbox/rustls-aws"]
+native-tls = ["pimalaya-toolbox/native-tls"]
+
+[build-dependencies]
+pimalaya-toolbox = { version = "0.0.4", default-features = false, features = ["build"], optional = true }
+
+[dev-dependencies]
+env_logger = "0.11"
+io-http = { version = "0.0.3", default-features = false }
+io-socket = { version = "0.0.1", default-features = false, features = ["std-stream", "std-udp-socket"] }
+
+[dependencies]
+anyhow = { version = "1", default-features = false, optional = true }
+clap = { version = "4.4", features = ["derive", "wrap_help"], optional = true }
+io-http = { version = "0.0.3", default-features = false, optional = true }
+io-socket = { version = "0.0.1", default-features = false, optional = true }
+log = { version = "0.4", default-features = false }
+pimalaya-toolbox = { version = "0.0.4", default-features = false, optional = true }
+thiserror = { version = "2", default-features = false }
+url = { version = "2.2", default-features = false, optional = true }
+
+[patch.crates-io]
+io-http.git = "https://github.com/pimalaya/io-http"
+io-socket.git = "https://github.com/pimalaya/io-socket"
+pimalaya-toolbox.git = "https://github.com/pimalaya/toolbox"
