@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use clap::{CommandFactory, Parser, Subcommand};
-use io_discovery::{isp::*, isp_fallback::*};
+use io_discovery::{isp::*, isp_fallback::*, ispdb::*};
 use io_socket::runtimes::std_stream::handle;
 use pimalaya_toolbox::{
     long_version,
@@ -49,8 +49,12 @@ enum DiscoveryCommand {
         #[arg(short, long)]
         secure: bool,
     },
-
     IspFallback {
+        domain: String,
+        #[arg(short, long)]
+        secure: bool,
+    },
+    Ispdb {
         domain: String,
         #[arg(short, long)]
         secure: bool,
@@ -101,6 +105,26 @@ impl DiscoveryCommand {
                             arg = Some(handle(&mut http.stream, input)?)
                         }
                         DiscoveryIspFallbackResult::Err { err } => bail!(err),
+                    }
+                };
+
+                printer.out(xml)
+            }
+
+            Self::Ispdb { domain, secure } => {
+                let url = DiscoveryIspdb::new_url(domain, secure)?;
+                let mut http = HttpSession::new(url.clone(), Default::default())?;
+
+                let mut arg = None;
+                let mut isp = DiscoveryIspdb::new(url);
+
+                let xml = loop {
+                    match isp.resume(arg.take()) {
+                        DiscoveryIspdbResult::Ok { xml } => break xml,
+                        DiscoveryIspdbResult::Io { input } => {
+                            arg = Some(handle(&mut http.stream, input)?)
+                        }
+                        DiscoveryIspdbResult::Err { err } => bail!(err),
                     }
                 };
 

@@ -1,25 +1,27 @@
 use alloc::{
     borrow::ToOwned,
     format,
-    string::{FromUtf8Error, String, ToString},
+    string::{FromUtf8Error, String},
 };
 
 use io_http::{rfc9110::request::HttpRequest, rfc9112::send::*};
 use io_socket::io::{SocketInput, SocketOutput};
+use log::trace;
 use thiserror::Error;
 use url::{ParseError, Url};
 
 /// Errors that can occur during a DNS TCP query.
 #[derive(Debug, Error)]
 pub enum DiscoveryIspError {
-    #[error(transparent)]
-    Http(#[from] Http11SendError),
-    #[error("ISP call returned unexpected {0} {1}")]
-    Status(u16, String),
-    #[error("ISP call reached unexpected redirection")]
-    Redirect,
+    #[error("ISP call returned unexpected {code}")]
+    Status { code: u16 },
+    #[error("ISP call reached unexpected redirection {code} to {url}")]
+    Redirect { url: Url, code: u16 },
+
     #[error("ISP call returned invalid UTF-8 body")]
     Utf8Body(#[source] FromUtf8Error),
+    #[error(transparent)]
+    Http(#[from] Http11SendError),
 }
 
 /// Output emitted when the coroutine terminates its progression.
@@ -74,30 +76,35 @@ impl DiscoveryIsp {
     pub fn resume(&mut self, arg: Option<SocketOutput>) -> DiscoveryIspResult {
         match self.http.resume(arg) {
             Http11SendResult::Ok { response, .. } if !response.status.is_success() => {
-                let body = response.body.trim_ascii();
-                let body = if body.is_empty() {
-                    String::from("without body")
-                } else {
-                    String::from_utf8_lossy(&body).to_string()
-                };
-
+                trace!("{response:?}");
                 DiscoveryIspResult::Err {
-                    err: DiscoveryIspError::Status(*response.status, body),
+                    err: DiscoveryIspError::Status {
+                        code: *response.status,
+                    },
                 }
             }
 
-            Http11SendResult::Ok { response, .. } => match String::from_utf8(response.body) {
-                Ok(xml) => DiscoveryIspResult::Ok { xml },
-                Err(err) => DiscoveryIspResult::Err {
-                    err: DiscoveryIspError::Utf8Body(err),
-                },
-            },
+            Http11SendResult::Ok { response, .. } => {
+                trace!("{response:?}");
+                match String::from_utf8(response.body) {
+                    Ok(xml) => DiscoveryIspResult::Ok { xml },
+                    Err(err) => DiscoveryIspResult::Err {
+                        err: DiscoveryIspError::Utf8Body(err),
+                    },
+                }
+            }
 
             Http11SendResult::Io { input } => DiscoveryIspResult::Io { input },
             Http11SendResult::Err { err } => DiscoveryIspResult::Err { err: err.into() },
-            Http11SendResult::Redirect { .. } => DiscoveryIspResult::Err {
-                err: DiscoveryIspError::Redirect,
-            },
+            Http11SendResult::Redirect { response, url, .. } => {
+                trace!("{response:?}");
+                DiscoveryIspResult::Err {
+                    err: DiscoveryIspError::Redirect {
+                        url,
+                        code: *response.status,
+                    },
+                }
+            }
         }
     }
 }

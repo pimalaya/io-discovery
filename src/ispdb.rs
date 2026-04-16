@@ -12,26 +12,26 @@ use url::{ParseError, Url};
 
 /// Errors that can occur during a DNS TCP query.
 #[derive(Debug, Error)]
-pub enum DiscoveryIspFallbackError {
-    #[error("ISP fallback call returned unexpected {code}")]
+pub enum DiscoveryIspdbError {
+    #[error("ISPDB call returned unexpected {code}")]
     Status { code: u16 },
-    #[error("ISP fallback call reached unexpected redirection {code} to {url}")]
+    #[error("ISPDB call reached unexpected redirection {code} to {url}")]
     Redirect { url: Url, code: u16 },
 
+    #[error("ISPDB call returned invalid UTF-8 body")]
+    Utf8Body(#[source] FromUtf8Error),
     #[error(transparent)]
     Http(#[from] Http11SendError),
-    #[error("ISP fallback call returned invalid UTF-8 body")]
-    Utf8Body(#[source] FromUtf8Error),
 }
 
 /// Output emitted when the coroutine terminates its progression.
-pub enum DiscoveryIspFallbackResult {
+pub enum DiscoveryIspdbResult {
     /// The coroutine has successfully decoded a DNS response.
     Ok { xml: String },
     /// A socket I/O needs to be performed to make the coroutine progress.
     Io { input: SocketInput },
     /// An error occurred during the coroutine progression.
-    Err { err: DiscoveryIspFallbackError },
+    Err { err: DiscoveryIspdbError },
 }
 
 #[derive(Debug, Default)]
@@ -43,15 +43,15 @@ pub enum State {
     Invalid,
 }
 
-pub struct DiscoveryIspFallback {
+pub struct DiscoveryIspdb {
     http: Http11Send,
 }
 
-impl DiscoveryIspFallback {
+impl DiscoveryIspdb {
     pub fn new_url(domain: impl AsRef<str>, secure: bool) -> Result<Url, ParseError> {
         let domain = domain.as_ref().trim_matches('.');
         let s = if secure { "s" } else { "" };
-        let url = format!("http{s}://{domain}/.well-known/autoconfig/mail/config-v1.1.xml");
+        let url = format!("http{s}://autoconfig.thunderbird.net/v1.1/{domain}");
         Url::parse(&url)
     }
 
@@ -65,12 +65,12 @@ impl DiscoveryIspFallback {
     }
 
     /// Makes the coroutine progress.
-    pub fn resume(&mut self, arg: Option<SocketOutput>) -> DiscoveryIspFallbackResult {
+    pub fn resume(&mut self, arg: Option<SocketOutput>) -> DiscoveryIspdbResult {
         match self.http.resume(arg) {
             Http11SendResult::Ok { response, .. } if !response.status.is_success() => {
                 trace!("{response:?}");
-                DiscoveryIspFallbackResult::Err {
-                    err: DiscoveryIspFallbackError::Status {
+                DiscoveryIspdbResult::Err {
+                    err: DiscoveryIspdbError::Status {
                         code: *response.status,
                     },
                 }
@@ -79,19 +79,19 @@ impl DiscoveryIspFallback {
             Http11SendResult::Ok { response, .. } => {
                 trace!("{response:?}");
                 match String::from_utf8(response.body) {
-                    Ok(xml) => DiscoveryIspFallbackResult::Ok { xml },
-                    Err(err) => DiscoveryIspFallbackResult::Err {
-                        err: DiscoveryIspFallbackError::Utf8Body(err),
+                    Ok(xml) => DiscoveryIspdbResult::Ok { xml },
+                    Err(err) => DiscoveryIspdbResult::Err {
+                        err: DiscoveryIspdbError::Utf8Body(err),
                     },
                 }
             }
 
-            Http11SendResult::Io { input } => DiscoveryIspFallbackResult::Io { input },
-            Http11SendResult::Err { err } => DiscoveryIspFallbackResult::Err { err: err.into() },
-            Http11SendResult::Redirect { url, response, .. } => {
+            Http11SendResult::Io { input } => DiscoveryIspdbResult::Io { input },
+            Http11SendResult::Err { err } => DiscoveryIspdbResult::Err { err: err.into() },
+            Http11SendResult::Redirect { response, url, .. } => {
                 trace!("{response:?}");
-                DiscoveryIspFallbackResult::Err {
-                    err: DiscoveryIspFallbackError::Redirect {
+                DiscoveryIspdbResult::Err {
+                    err: DiscoveryIspdbError::Redirect {
                         url,
                         code: *response.status,
                     },
