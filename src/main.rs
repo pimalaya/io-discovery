@@ -1,10 +1,9 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
-use io_discovery::{isp::*, isp_fallback::*, ispdb::*};
-use io_socket::runtimes::std_stream::handle;
+#[cfg(feature = "autoconfig")]
+use io_discovery::autoconfig::command::AutoconfigCommand;
 use pimalaya_toolbox::{
     long_version,
-    stream::http::HttpSession,
     terminal::{
         clap::{
             args::{JsonFlag, LogFlags},
@@ -43,23 +42,9 @@ struct DiscoveryCli {
 
 #[derive(Subcommand, Debug)]
 enum DiscoveryCommand {
-    Isp {
-        local_part: String,
-        domain: String,
-        #[arg(short, long)]
-        secure: bool,
-    },
-    IspFallback {
-        domain: String,
-        #[arg(short, long)]
-        secure: bool,
-    },
-    Ispdb {
-        domain: String,
-        #[arg(short, long)]
-        secure: bool,
-    },
-
+    #[cfg(feature = "autoconfig")]
+    #[command(subcommand)]
+    Autoconfig(AutoconfigCommand),
     Completions(CompletionCommand),
     Manuals(ManualCommand),
 }
@@ -67,70 +52,8 @@ enum DiscoveryCommand {
 impl DiscoveryCommand {
     pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
         match self {
-            Self::Isp {
-                local_part,
-                domain,
-                secure,
-            } => {
-                let url = DiscoveryIsp::new_url(local_part, domain, secure)?;
-                let mut http = HttpSession::new(url.clone(), Default::default())?;
-
-                let mut arg = None;
-                let mut isp = DiscoveryIsp::new(url);
-
-                let xml = loop {
-                    match isp.resume(arg.take()) {
-                        DiscoveryIspResult::Ok { xml } => break xml,
-                        DiscoveryIspResult::Io { input } => {
-                            arg = Some(handle(&mut http.stream, input)?)
-                        }
-                        DiscoveryIspResult::Err { err } => bail!(err),
-                    }
-                };
-
-                printer.out(xml)
-            }
-
-            Self::IspFallback { domain, secure } => {
-                let url = DiscoveryIspFallback::new_url(domain, secure)?;
-                let mut http = HttpSession::new(url.clone(), Default::default())?;
-
-                let mut arg = None;
-                let mut isp = DiscoveryIspFallback::new(url);
-
-                let xml = loop {
-                    match isp.resume(arg.take()) {
-                        DiscoveryIspFallbackResult::Ok { xml } => break xml,
-                        DiscoveryIspFallbackResult::Io { input } => {
-                            arg = Some(handle(&mut http.stream, input)?)
-                        }
-                        DiscoveryIspFallbackResult::Err { err } => bail!(err),
-                    }
-                };
-
-                printer.out(xml)
-            }
-
-            Self::Ispdb { domain, secure } => {
-                let url = DiscoveryIspdb::new_url(domain, secure)?;
-                let mut http = HttpSession::new(url.clone(), Default::default())?;
-
-                let mut arg = None;
-                let mut isp = DiscoveryIspdb::new(url);
-
-                let xml = loop {
-                    match isp.resume(arg.take()) {
-                        DiscoveryIspdbResult::Ok { xml } => break xml,
-                        DiscoveryIspdbResult::Io { input } => {
-                            arg = Some(handle(&mut http.stream, input)?)
-                        }
-                        DiscoveryIspdbResult::Err { err } => bail!(err),
-                    }
-                };
-
-                printer.out(xml)
-            }
-
+            #[cfg(feature = "autoconfig")]
+            Self::Autoconfig(cmd) => cmd.execute(printer),
             Self::Completions(cmd) => cmd.execute(printer, DiscoveryCli::command()),
             Self::Manuals(cmd) => cmd.execute(printer, DiscoveryCli::command()),
         }

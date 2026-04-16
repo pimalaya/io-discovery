@@ -10,48 +10,52 @@ use log::trace;
 use thiserror::Error;
 use url::{ParseError, Url};
 
+use crate::autoconfig::serde::AutoConfig;
+
 /// Errors that can occur during a DNS TCP query.
 #[derive(Debug, Error)]
-pub enum DiscoveryIspdbError {
-    #[error("ISPDB call returned unexpected {code}")]
+pub enum DiscoveryIspError {
+    #[error("ISP call returned unexpected {code}")]
     Status { code: u16 },
-    #[error("ISPDB call reached unexpected redirection {code} to {url}")]
+    #[error("ISP call reached unexpected redirection {code} to {url}")]
     Redirect { url: Url, code: u16 },
 
-    #[error("ISPDB call returned invalid UTF-8 body")]
-    Utf8Body(#[source] FromUtf8Error),
+    #[error("ISP call returned invalid UTF-8 body")]
+    Utf8(#[source] FromUtf8Error),
+    #[error("ISP call returned invalid XML body")]
+    Xml(#[source] serde_xml_rs::Error),
     #[error(transparent)]
     Http(#[from] Http11SendError),
 }
 
 /// Output emitted when the coroutine terminates its progression.
-pub enum DiscoveryIspdbResult {
+pub enum DiscoveryIspResult {
     /// The coroutine has successfully decoded a DNS response.
-    Ok { xml: String },
+    Ok { autoconfig: AutoConfig },
     /// A socket I/O needs to be performed to make the coroutine progress.
     Io { input: SocketInput },
     /// An error occurred during the coroutine progression.
-    Err { err: DiscoveryIspdbError },
+    Err { err: DiscoveryIspError },
 }
 
-#[derive(Debug, Default)]
-pub enum State {
-    Send(Http11Send),
-    Sending,
-    Sent,
-    #[default]
-    Invalid,
-}
-
-pub struct DiscoveryIspdb {
+#[derive(Debug)]
+pub struct DiscoveryIsp {
     http: Http11Send,
 }
 
-impl DiscoveryIspdb {
-    pub fn new_url(domain: impl AsRef<str>, secure: bool) -> Result<Url, ParseError> {
+impl DiscoveryIsp {
+    pub fn new_url(
+        local_part: impl AsRef<str>,
+        domain: impl AsRef<str>,
+        secure: bool,
+    ) -> Result<Url, ParseError> {
         let domain = domain.as_ref().trim_matches('.');
+        let email = format!("{}@{domain}", local_part.as_ref());
         let s = if secure { "s" } else { "" };
-        let url = format!("http{s}://autoconfig.thunderbird.net/v1.1/{domain}");
+
+        let path = format!("/mail/config-v1.1.xml?emailaddress={email}");
+        let url = format!("http{s}://autoconfig.{domain}{path}");
+
         Url::parse(&url)
     }
 
@@ -65,12 +69,13 @@ impl DiscoveryIspdb {
     }
 
     /// Makes the coroutine progress.
-    pub fn resume(&mut self, arg: Option<SocketOutput>) -> DiscoveryIspdbResult {
+    pub fn resume(&mut self, arg: Option<SocketOutput>) -> DiscoveryIspResult {
         match self.http.resume(arg) {
             Http11SendResult::Ok { response, .. } if !response.status.is_success() => {
                 trace!("{response:?}");
-                DiscoveryIspdbResult::Err {
-                    err: DiscoveryIspdbError::Status {
+
+                DiscoveryIspResult::Err {
+                    err: DiscoveryIspError::Status {
                         code: *response.status,
                     },
                 }
@@ -78,20 +83,31 @@ impl DiscoveryIspdb {
 
             Http11SendResult::Ok { response, .. } => {
                 trace!("{response:?}");
-                match String::from_utf8(response.body) {
-                    Ok(xml) => DiscoveryIspdbResult::Ok { xml },
-                    Err(err) => DiscoveryIspdbResult::Err {
-                        err: DiscoveryIspdbError::Utf8Body(err),
+
+                let xml = match String::from_utf8(response.body) {
+                    Ok(body) => body,
+                    Err(err) => {
+                        return DiscoveryIspResult::Err {
+                            err: DiscoveryIspError::Utf8(err),
+                        };
+                    }
+                };
+
+                match serde_xml_rs::from_str(&xml) {
+                    Ok(autoconfig) => DiscoveryIspResult::Ok { autoconfig },
+                    Err(err) => DiscoveryIspResult::Err {
+                        err: DiscoveryIspError::Xml(err),
                     },
                 }
             }
 
-            Http11SendResult::Io { input } => DiscoveryIspdbResult::Io { input },
-            Http11SendResult::Err { err } => DiscoveryIspdbResult::Err { err: err.into() },
+            Http11SendResult::Io { input } => DiscoveryIspResult::Io { input },
+            Http11SendResult::Err { err } => DiscoveryIspResult::Err { err: err.into() },
             Http11SendResult::Redirect { response, url, .. } => {
                 trace!("{response:?}");
-                DiscoveryIspdbResult::Err {
-                    err: DiscoveryIspdbError::Redirect {
+
+                DiscoveryIspResult::Err {
+                    err: DiscoveryIspError::Redirect {
                         url,
                         code: *response.status,
                     },

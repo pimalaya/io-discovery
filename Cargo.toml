@@ -17,9 +17,9 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["isp", "cli", "rustls-ring"]
+default = ["autoconfig", "cli", "rustls-ring"]
 cli = ["dep:anyhow", "dep:clap", "io-socket/std-stream", "pimalaya-toolbox/terminal"]
-isp = ["dep:io-http", "dep:io-socket", "dep:url", "pimalaya-toolbox/http"]
+autoconfig = ["dep:io-http", "dep:io-socket", "dep:serde", "dep:serde-xml-rs", "dep:url", "pimalaya-toolbox/http"]
 rustls-ring = ["pimalaya-toolbox/rustls-ring"]
 rustls-aws = ["pimalaya-toolbox/rustls-aws"]
 native-tls = ["pimalaya-toolbox/native-tls"]
@@ -39,6 +39,8 @@ io-http = { version = "0.0.3", default-features = false, optional = true }
 io-socket = { version = "0.0.1", default-features = false, optional = true }
 log = { version = "0.4", default-features = false }
 pimalaya-toolbox = { version = "0.0.4", default-features = false, optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde-xml-rs = { version = "0.7", optional = true }
 thiserror = { version = "2", default-features = false }
 url = { version = "2.2", default-features = false, optional = true }
 

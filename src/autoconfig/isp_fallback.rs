@@ -10,6 +10,8 @@ use log::trace;
 use thiserror::Error;
 use url::{ParseError, Url};
 
+use crate::autoconfig::serde::AutoConfig;
+
 /// Errors that can occur during a DNS TCP query.
 #[derive(Debug, Error)]
 pub enum DiscoveryIspFallbackError {
@@ -18,31 +20,25 @@ pub enum DiscoveryIspFallbackError {
     #[error("ISP fallback call reached unexpected redirection {code} to {url}")]
     Redirect { url: Url, code: u16 },
 
+    #[error("ISP fallback call returned invalid UTF-8 body")]
+    Utf8(#[source] FromUtf8Error),
+    #[error("ISP fallback call returned invalid XML body")]
+    Xml(#[source] serde_xml_rs::Error),
     #[error(transparent)]
     Http(#[from] Http11SendError),
-    #[error("ISP fallback call returned invalid UTF-8 body")]
-    Utf8Body(#[source] FromUtf8Error),
 }
 
 /// Output emitted when the coroutine terminates its progression.
 pub enum DiscoveryIspFallbackResult {
     /// The coroutine has successfully decoded a DNS response.
-    Ok { xml: String },
+    Ok { autoconfig: AutoConfig },
     /// A socket I/O needs to be performed to make the coroutine progress.
     Io { input: SocketInput },
     /// An error occurred during the coroutine progression.
     Err { err: DiscoveryIspFallbackError },
 }
 
-#[derive(Debug, Default)]
-pub enum State {
-    Send(Http11Send),
-    Sending,
-    Sent,
-    #[default]
-    Invalid,
-}
-
+#[derive(Debug)]
 pub struct DiscoveryIspFallback {
     http: Http11Send,
 }
@@ -69,6 +65,7 @@ impl DiscoveryIspFallback {
         match self.http.resume(arg) {
             Http11SendResult::Ok { response, .. } if !response.status.is_success() => {
                 trace!("{response:?}");
+
                 DiscoveryIspFallbackResult::Err {
                     err: DiscoveryIspFallbackError::Status {
                         code: *response.status,
@@ -78,10 +75,20 @@ impl DiscoveryIspFallback {
 
             Http11SendResult::Ok { response, .. } => {
                 trace!("{response:?}");
-                match String::from_utf8(response.body) {
-                    Ok(xml) => DiscoveryIspFallbackResult::Ok { xml },
+
+                let xml = match String::from_utf8(response.body) {
+                    Ok(body) => body,
+                    Err(err) => {
+                        return DiscoveryIspFallbackResult::Err {
+                            err: DiscoveryIspFallbackError::Utf8(err),
+                        };
+                    }
+                };
+
+                match serde_xml_rs::from_str(&xml) {
+                    Ok(autoconfig) => DiscoveryIspFallbackResult::Ok { autoconfig },
                     Err(err) => DiscoveryIspFallbackResult::Err {
-                        err: DiscoveryIspFallbackError::Utf8Body(err),
+                        err: DiscoveryIspFallbackError::Xml(err),
                     },
                 }
             }
@@ -90,6 +97,7 @@ impl DiscoveryIspFallback {
             Http11SendResult::Err { err } => DiscoveryIspFallbackResult::Err { err: err.into() },
             Http11SendResult::Redirect { url, response, .. } => {
                 trace!("{response:?}");
+
                 DiscoveryIspFallbackResult::Err {
                     err: DiscoveryIspFallbackError::Redirect {
                         url,
