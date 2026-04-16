@@ -6,3 +6,5 @@ extern crate alloc;
 
 #[cfg(feature = "isp")]
 pub mod isp;
+#[cfg(feature = "isp")]
+pub mod isp_fallback;

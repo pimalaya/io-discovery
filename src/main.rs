@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use clap::{CommandFactory, Parser, Subcommand};
-use io_discovery::isp::*;
+use io_discovery::{isp::*, isp_fallback::*};
 use io_socket::runtimes::std_stream::handle;
 use pimalaya_toolbox::{
     long_version,
@@ -50,6 +50,12 @@ enum DiscoveryCommand {
         secure: bool,
     },
 
+    IspFallback {
+        domain: String,
+        #[arg(short, long)]
+        secure: bool,
+    },
+
     Completions(CompletionCommand),
     Manuals(ManualCommand),
 }
@@ -62,19 +68,39 @@ impl DiscoveryCommand {
                 domain,
                 secure,
             } => {
-                let url = DiscoveryIspMain::generate_url(local_part, domain, secure)?;
+                let url = DiscoveryIsp::new_url(local_part, domain, secure)?;
                 let mut http = HttpSession::new(url.clone(), Default::default())?;
 
                 let mut arg = None;
-                let mut isp = DiscoveryIspMain::new(url);
+                let mut isp = DiscoveryIsp::new(url);
 
                 let xml = loop {
                     match isp.resume(arg.take()) {
-                        DiscoveryIspMainResult::Ok { xml } => break xml,
-                        DiscoveryIspMainResult::Io { input } => {
+                        DiscoveryIspResult::Ok { xml } => break xml,
+                        DiscoveryIspResult::Io { input } => {
                             arg = Some(handle(&mut http.stream, input)?)
                         }
-                        DiscoveryIspMainResult::Err { err } => bail!(err),
+                        DiscoveryIspResult::Err { err } => bail!(err),
+                    }
+                };
+
+                printer.out(xml)
+            }
+
+            Self::IspFallback { domain, secure } => {
+                let url = DiscoveryIspFallback::new_url(domain, secure)?;
+                let mut http = HttpSession::new(url.clone(), Default::default())?;
+
+                let mut arg = None;
+                let mut isp = DiscoveryIspFallback::new(url);
+
+                let xml = loop {
+                    match isp.resume(arg.take()) {
+                        DiscoveryIspFallbackResult::Ok { xml } => break xml,
+                        DiscoveryIspFallbackResult::Io { input } => {
+                            arg = Some(handle(&mut http.stream, input)?)
+                        }
+                        DiscoveryIspFallbackResult::Err { err } => bail!(err),
                     }
                 };
 

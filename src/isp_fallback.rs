@@ -11,25 +11,25 @@ use url::{ParseError, Url};
 
 /// Errors that can occur during a DNS TCP query.
 #[derive(Debug, Error)]
-pub enum DiscoveryIspError {
+pub enum DiscoveryIspFallbackError {
     #[error(transparent)]
     Http(#[from] Http11SendError),
-    #[error("ISP call returned unexpected {0} {1}")]
+    #[error("ISP fallback call returned unexpected {0} {1}")]
     Status(u16, String),
-    #[error("ISP call reached unexpected redirection")]
+    #[error("ISP fallback call reached unexpected redirection")]
     Redirect,
-    #[error("ISP call returned invalid UTF-8 body")]
+    #[error("ISP fallback call returned invalid UTF-8 body")]
     Utf8Body(#[source] FromUtf8Error),
 }
 
 /// Output emitted when the coroutine terminates its progression.
-pub enum DiscoveryIspResult {
+pub enum DiscoveryIspFallbackResult {
     /// The coroutine has successfully decoded a DNS response.
     Ok { xml: String },
     /// A socket I/O needs to be performed to make the coroutine progress.
     Io { input: SocketInput },
     /// An error occurred during the coroutine progression.
-    Err { err: DiscoveryIspError },
+    Err { err: DiscoveryIspFallbackError },
 }
 
 #[derive(Debug, Default)]
@@ -41,23 +41,15 @@ pub enum State {
     Invalid,
 }
 
-pub struct DiscoveryIsp {
+pub struct DiscoveryIspFallback {
     http: Http11Send,
 }
 
-impl DiscoveryIsp {
-    pub fn new_url(
-        local_part: impl AsRef<str>,
-        domain: impl AsRef<str>,
-        secure: bool,
-    ) -> Result<Url, ParseError> {
+impl DiscoveryIspFallback {
+    pub fn new_url(domain: impl AsRef<str>, secure: bool) -> Result<Url, ParseError> {
         let domain = domain.as_ref().trim_matches('.');
-        let email = format!("{}@{domain}", local_part.as_ref());
         let s = if secure { "s" } else { "" };
-
-        let path = format!("/mail/config-v1.1.xml?emailaddress={email}");
-        let url = format!("http{s}://autoconfig.{domain}{path}");
-
+        let url = format!("http{s}://{domain}/.well-known/autoconfig/mail/config-v1.1.xml");
         Url::parse(&url)
     }
 
@@ -71,7 +63,7 @@ impl DiscoveryIsp {
     }
 
     /// Makes the coroutine progress.
-    pub fn resume(&mut self, arg: Option<SocketOutput>) -> DiscoveryIspResult {
+    pub fn resume(&mut self, arg: Option<SocketOutput>) -> DiscoveryIspFallbackResult {
         match self.http.resume(arg) {
             Http11SendResult::Ok { response, .. } if !response.status.is_success() => {
                 let body = response.body.trim_ascii();
@@ -81,22 +73,22 @@ impl DiscoveryIsp {
                     String::from_utf8_lossy(&body).to_string()
                 };
 
-                DiscoveryIspResult::Err {
-                    err: DiscoveryIspError::Status(*response.status, body),
+                DiscoveryIspFallbackResult::Err {
+                    err: DiscoveryIspFallbackError::Status(*response.status, body),
                 }
             }
 
             Http11SendResult::Ok { response, .. } => match String::from_utf8(response.body) {
-                Ok(xml) => DiscoveryIspResult::Ok { xml },
-                Err(err) => DiscoveryIspResult::Err {
-                    err: DiscoveryIspError::Utf8Body(err),
+                Ok(xml) => DiscoveryIspFallbackResult::Ok { xml },
+                Err(err) => DiscoveryIspFallbackResult::Err {
+                    err: DiscoveryIspFallbackError::Utf8Body(err),
                 },
             },
 
-            Http11SendResult::Io { input } => DiscoveryIspResult::Io { input },
-            Http11SendResult::Err { err } => DiscoveryIspResult::Err { err: err.into() },
-            Http11SendResult::Redirect { .. } => DiscoveryIspResult::Err {
-                err: DiscoveryIspError::Redirect,
+            Http11SendResult::Io { input } => DiscoveryIspFallbackResult::Io { input },
+            Http11SendResult::Err { err } => DiscoveryIspFallbackResult::Err { err: err.into() },
+            Http11SendResult::Redirect { .. } => DiscoveryIspFallbackResult::Err {
+                err: DiscoveryIspFallbackError::Redirect,
             },
         }
     }
