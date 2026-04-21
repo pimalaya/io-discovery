@@ -5,7 +5,6 @@ use alloc::{
 };
 
 use io_http::{rfc9110::request::HttpRequest, rfc9112::send::*};
-use io_socket::io::{SocketInput, SocketOutput};
 use log::trace;
 use thiserror::Error;
 use url::{ParseError, Url};
@@ -31,11 +30,16 @@ pub enum DiscoveryIspError {
 /// Output emitted when the coroutine terminates its progression.
 pub enum DiscoveryIspResult {
     /// The coroutine has successfully decoded a DNS response.
-    Ok { autoconfig: AutoConfig },
+    Ok {
+        autoconfig: AutoConfig,
+    },
     /// A socket I/O needs to be performed to make the coroutine progress.
-    Io { input: SocketInput },
+    WantsRead,
+    WantsWrite(Vec<u8>),
     /// An error occurred during the coroutine progression.
-    Err { err: DiscoveryIspError },
+    Err {
+        err: DiscoveryIspError,
+    },
 }
 
 #[derive(Debug)]
@@ -69,7 +73,7 @@ impl DiscoveryIsp {
     }
 
     /// Makes the coroutine progress.
-    pub fn resume(&mut self, arg: Option<SocketOutput>) -> DiscoveryIspResult {
+    pub fn resume(&mut self, arg: &[u8]) -> DiscoveryIspResult {
         match self.http.resume(arg) {
             Http11SendResult::Ok { response, .. } if !response.status.is_success() => {
                 trace!("{response:?}");
@@ -101,9 +105,9 @@ impl DiscoveryIsp {
                 }
             }
 
-            Http11SendResult::Io { input } => DiscoveryIspResult::Io { input },
-            Http11SendResult::Err { err } => DiscoveryIspResult::Err { err: err.into() },
-            Http11SendResult::Redirect { response, url, .. } => {
+            Http11SendResult::WantsRead => DiscoveryIspResult::WantsRead,
+            Http11SendResult::WantsWrite(bytes) => DiscoveryIspResult::WantsWrite(bytes),
+            Http11SendResult::WantsRedirect { response, url, .. } => {
                 trace!("{response:?}");
 
                 DiscoveryIspResult::Err {
@@ -113,6 +117,8 @@ impl DiscoveryIsp {
                     },
                 }
             }
+
+            Http11SendResult::Err(err) => DiscoveryIspResult::Err { err: err.into() },
         }
     }
 }

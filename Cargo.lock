@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "allocator-api2"
+version = "0.2.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
+
+[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -106,6 +112,12 @@ name = "bitflags"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
+
+[[package]]
+name = "bumpalo"
+version = "3.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb"
 
 [[package]]
 name = "bytes"
@@ -233,6 +245,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
+name = "deranged"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
+dependencies = [
+ "powerfmt",
+]
+
+[[package]]
 name = "dirs"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -258,6 +279,31 @@ name = "displaydoc"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97369cbbc041bc366949bc74d34658d6cda5621039731c6310521892a3a20ae0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "domain"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f7ff15f82df7d5086fb15dfc1c1e96598a6ded9829840a9bcfa1fa3ccd8d01d"
+dependencies = [
+ "bumpalo",
+ "bytes",
+ "domain-macros",
+ "hashbrown 0.14.5",
+ "octseq",
+ "time",
+]
+
+[[package]]
+name = "domain-macros"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d1a6796ad411f6812d691955066ad27450196bfb181bb91b66a643cc3e8f5b7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -404,6 +450,15 @@ dependencies = [
  "libgit2-sys",
  "log",
  "url",
+]
+
+[[package]]
+name = "hashbrown"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+dependencies = [
+ "allocator-api2",
 ]
 
 [[package]]
@@ -560,9 +615,9 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "clap",
+ "domain",
  "env_logger",
  "io-http",
- "io-socket",
  "log",
  "pimalaya-toolbox",
  "serde",
@@ -574,25 +629,14 @@ dependencies = [
 [[package]]
 name = "io-http"
 version = "0.0.3"
-source = "git+https://github.com/pimalaya/io-http#898a841b009ba133ac5242a8456fc3138bf05311"
 dependencies = [
  "base64",
  "httparse",
- "io-socket",
  "log",
  "memchr",
  "secrecy",
  "thiserror 2.0.18",
  "url",
-]
-
-[[package]]
-name = "io-socket"
-version = "0.0.1"
-source = "git+https://github.com/pimalaya/io-socket#5899582a02a2bde78a4c92e5a2ed2f2cfea54c29"
-dependencies = [
- "log",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -786,6 +830,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-conv"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
+
+[[package]]
+name = "octseq"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "126c3ca37c9c44cec575247f43a3e4374d8927684f129d2beeb0d2cef262fe12"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -856,7 +915,6 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "pimalaya-toolbox"
 version = "0.0.4"
-source = "git+https://github.com/pimalaya/toolbox#6af68a0b14c6d135af62be91d73cb7c18f9d9924"
 dependencies = [
  "anyhow",
  "clap",
@@ -864,7 +922,6 @@ dependencies = [
  "clap_mangen",
  "env_logger",
  "git2",
- "io-socket",
  "log",
  "native-tls",
  "rustls",
@@ -906,6 +963,12 @@ checksum = "0103b1cef7ec0cf76490e969665504990193874ea05c85ff9bab8b911d0a0564"
 dependencies = [
  "zerovec",
 ]
+
+[[package]]
+name = "powerfmt"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "prettyplease"
@@ -1364,6 +1427,25 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "time"
+version = "0.3.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9e442fc33d7fdb45aa9bfeb312c095964abdf596f7567261062b2a7107aaabd"
+dependencies = [
+ "deranged",
+ "num-conv",
+ "powerfmt",
+ "serde_core",
+ "time-core",
+]
+
+[[package]]
+name = "time-core"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b36ee98fd31ec7426d599183e8fe26932a8dc1fb76ddb6214d05493377d34ca"
 
 [[package]]
 name = "tinystr"

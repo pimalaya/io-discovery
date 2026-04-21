@@ -18,8 +18,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["autoconfig", "cli", "rustls-ring"]
-cli = ["dep:anyhow", "dep:clap", "io-socket/std-stream", "pimalaya-toolbox/terminal"]
-autoconfig = ["dep:io-http", "dep:io-socket", "dep:serde", "dep:serde-xml-rs", "dep:url", "pimalaya-toolbox/http"]
+cli = ["dep:anyhow", "dep:clap", "pimalaya-toolbox/terminal"]
+autoconfig = ["dep:io-http", "dep:serde", "dep:serde-xml-rs", "dep:url", "pimalaya-toolbox/http"]
 rustls-ring = ["pimalaya-toolbox/rustls-ring"]
 rustls-aws = ["pimalaya-toolbox/rustls-aws"]
 native-tls = ["pimalaya-toolbox/native-tls"]
@@ -30,13 +30,12 @@ pimalaya-toolbox = { version = "0.0.4", default-features = false, features = ["b
 [dev-dependencies]
 env_logger = "0.11"
 io-http = { version = "0.0.3", default-features = false }
-io-socket = { version = "0.0.1", default-features = false, features = ["std-stream", "std-udp-socket"] }
 
 [dependencies]
 anyhow = { version = "1", default-features = false, optional = true }
 clap = { version = "4.4", features = ["derive", "wrap_help"], optional = true }
+domain = { version = "0.11", default-features = false, features = ["alloc", "std"] }
 io-http = { version = "0.0.3", default-features = false, optional = true }
-io-socket = { version = "0.0.1", default-features = false, optional = true }
 log = { version = "0.4", default-features = false }
 pimalaya-toolbox = { version = "0.0.4", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
@@ -45,6 +44,10 @@ thiserror = { version = "2", default-features = false }
 url = { version = "2.2", default-features = false, optional = true }
 
 [patch.crates-io]
-io-http.git = "https://github.com/pimalaya/io-http"
-io-socket.git = "https://github.com/pimalaya/io-socket"
-pimalaya-toolbox.git = "https://github.com/pimalaya/toolbox"
+io-http.path = "../io-http"
+pimalaya-toolbox.path = "../toolbox"
+
+# [patch.crates-io]
+# io-http.git = "https://github.com/pimalaya/io-http"
+# io-socket.git = "https://github.com/pimalaya/io-socket"
+# pimalaya-toolbox.git = "https://github.com/pimalaya/toolbox"
