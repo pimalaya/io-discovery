@@ -32,6 +32,22 @@ pub struct EmailProvider {
     pub properties: Vec<EmailProviderProperty>,
 }
 
+impl EmailProvider {
+    pub fn incoming_servers(&self) -> impl Iterator<Item = &Server> {
+        self.properties.iter().filter_map(|p| match p {
+            EmailProviderProperty::IncomingServer(s) => Some(s),
+            _ => None,
+        })
+    }
+
+    pub fn outgoing_servers(&self) -> impl Iterator<Item = &Server> {
+        self.properties.iter().filter_map(|p| match p {
+            EmailProviderProperty::OutgoingServer(s) => Some(s),
+            _ => None,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EmailProviderProperty {
@@ -48,6 +64,43 @@ pub struct Server {
     pub r#type: ServerType,
     #[serde(rename = "$value")]
     pub properties: Vec<ServerProperty>,
+}
+
+impl Server {
+    pub fn hostname(&self) -> Option<&str> {
+        self.properties.iter().find_map(|p| match p {
+            ServerProperty::Hostname(h) => Some(h.as_str()),
+            _ => None,
+        })
+    }
+
+    pub fn port(&self) -> Option<u16> {
+        self.properties.iter().find_map(|p| match p {
+            ServerProperty::Port(p) => Some(*p),
+            _ => None,
+        })
+    }
+
+    pub fn security_type(&self) -> Option<&SecurityType> {
+        self.properties.iter().find_map(|p| match p {
+            ServerProperty::SocketType(s) => Some(s),
+            _ => None,
+        })
+    }
+
+    pub fn username(&self) -> Option<&str> {
+        self.properties.iter().find_map(|p| match p {
+            ServerProperty::Username(u) => Some(u.as_str()),
+            _ => None,
+        })
+    }
+
+    pub fn authentication_types(&self) -> impl Iterator<Item = &AuthenticationType> {
+        self.properties.iter().filter_map(|p| match p {
+            ServerProperty::Authentication(a) => Some(a),
+            _ => None,
+        })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
