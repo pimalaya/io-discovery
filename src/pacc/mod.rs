@@ -1,6 +1,5 @@
 #[cfg(feature = "cli")]
 pub mod command;
-pub mod dns_mx;
-pub mod dns_srv;
-pub mod isp;
+pub mod fetch;
 pub mod serde;
+pub mod verify;

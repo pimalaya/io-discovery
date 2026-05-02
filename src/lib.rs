@@ -6,3 +6,9 @@ extern crate alloc;
 
 #[cfg(feature = "autoconfig")]
 pub mod autoconfig;
+#[cfg(any(feature = "autoconfig", feature = "pacc"))]
+pub mod dns_txt;
+#[cfg(any(feature = "autoconfig", feature = "pacc"))]
+pub mod http_get;
+#[cfg(feature = "pacc")]
+pub mod pacc;

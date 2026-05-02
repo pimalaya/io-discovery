@@ -17,15 +17,16 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["autoconfig", "cli", "rustls-ring"]
-cli = ["dep:anyhow", "dep:clap", "pimalaya-toolbox/terminal"]
+default = ["autoconfig", "pacc", "cli", "rustls-ring"]
+cli = ["dep:anyhow", "dep:clap", "dep:pimalaya-cli", "pimalaya-cli/terminal"]
 autoconfig = ["dep:io-http", "dep:serde", "dep:serde-xml-rs", "dep:url", "pimalaya-toolbox/http"]
+pacc = ["dep:io-http", "dep:serde", "dep:serde_json", "dep:url", "dep:base64", "dep:sha2", "dep:subtle", "pimalaya-toolbox/http"]
 rustls-ring = ["pimalaya-toolbox/rustls-ring"]
 rustls-aws = ["pimalaya-toolbox/rustls-aws"]
 native-tls = ["pimalaya-toolbox/native-tls"]
 
 [build-dependencies]
-pimalaya-toolbox = { version = "0.0.4", default-features = false, features = ["build"], optional = true }
+pimalaya-cli = { version = "0.0.1", default-features = false, features = ["build"], optional = true }
 
 [dev-dependencies]
 env_logger = "0.11"
@@ -33,17 +34,29 @@ io-http = { version = "0.0.3", default-features = false }
 
 [dependencies]
 anyhow = { version = "1", default-features = false, optional = true }
+base64 = { version = "0.22", default-features = false, features = ["alloc"], optional = true }
 clap = { version = "4.4", features = ["derive", "wrap_help"], optional = true }
 domain = { version = "0.12", default-features = false, features = ["alloc", "std", "unstable-new"] }
 io-http = { version = "0.0.3", default-features = false, optional = true }
 log = { version = "0.4", default-features = false }
+pimalaya-cli = { version = "0.0.1", default-features = false, optional = true }
 pimalaya-toolbox = { version = "0.0.4", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde-xml-rs = { version = "0.7", optional = true }
+serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }
+sha2 = { version = "0.10", default-features = false, optional = true }
+subtle = { version = "2", default-features = false, optional = true }
 thiserror = { version = "2", default-features = false }
 url = { version = "2.2", default-features = false, optional = true }
 
 [patch.crates-io]
-domain = { git = "https://github.com/soywod/domain", branch = "new-srv" }
-io-http.git = "https://github.com/pimalaya/io-http"
-pimalaya-toolbox.git = "https://github.com/pimalaya/toolbox"
+domain.path = "../../domain"
+io-http.path = "../io-http"
+pimalaya-cli.path = "../cli"
+pimalaya-toolbox.path = "../toolbox"
+
+# [patch.crates-io]
+# domain = { git = "https://github.com/soywod/domain", branch = "new-srv" }
+# io-http.git = "https://github.com/pimalaya/io-http"
+# pimalaya-cli.git = "https://github.com/pimalaya/cli"
+# pimalaya-toolbox.git = "https://github.com/pimalaya/toolbox"

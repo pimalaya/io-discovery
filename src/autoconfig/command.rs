@@ -7,18 +7,21 @@ use anyhow::{Result, anyhow, bail};
 use clap::Subcommand;
 use domain::new::{base::name::NameBuf, rdata::Srv};
 use log::trace;
-use pimalaya_toolbox::{stream::http::HttpSession, terminal::printer::Printer};
+use pimalaya_cli::printer::Printer;
+use pimalaya_toolbox::stream::http::HttpSession;
 use url::Url;
 
-use crate::autoconfig::{
-    dns_mx::*,
-    dns_srv::*,
-    dns_txt::*,
-    isp::*,
-    serde::{
-        AuthenticationType, AutoConfig, EmailProvider, EmailProviderProperty, SecurityType, Server,
-        ServerProperty, ServerType,
+use crate::{
+    autoconfig::{
+        dns_mx::*,
+        dns_srv::*,
+        isp::*,
+        serde::{
+            AuthenticationType, AutoConfig, EmailProvider, EmailProviderProperty, SecurityType,
+            Server, ServerProperty, ServerType,
+        },
     },
+    dns_txt::*,
 };
 
 const DEFAULT_DNS_SERVER: &str = "1.1.1.1:53";
