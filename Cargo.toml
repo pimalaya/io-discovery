@@ -17,13 +17,14 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["autoconfig", "pacc", "cli", "rustls-ring"]
-cli = ["dep:anyhow", "dep:clap", "dep:pimalaya-cli", "pimalaya-cli/terminal"]
-autoconfig = ["dep:io-http", "dep:serde", "dep:serde-xml-rs", "dep:url", "pimalaya-toolbox/http"]
-pacc = ["dep:io-http", "dep:serde", "dep:serde_json", "dep:url", "dep:base64", "dep:sha2", "dep:subtle", "pimalaya-toolbox/http"]
-rustls-ring = ["pimalaya-toolbox/rustls-ring"]
-rustls-aws = ["pimalaya-toolbox/rustls-aws"]
-native-tls = ["pimalaya-toolbox/native-tls"]
+default = ["autoconfig", "pacc", "client", "rustls-ring"]
+client = ["dep:pimalaya-toolbox", "pimalaya-toolbox/http"]
+cli = ["client", "dep:anyhow", "dep:clap", "dep:pimalaya-cli", "pimalaya-cli/terminal"]
+autoconfig = ["dep:io-http", "dep:serde", "dep:serde-xml-rs", "dep:url"]
+pacc = ["dep:io-http", "dep:serde", "dep:serde_json", "dep:url", "dep:base64", "dep:sha2", "dep:subtle"]
+rustls-ring = ["pimalaya-toolbox?/rustls-ring"]
+rustls-aws = ["pimalaya-toolbox?/rustls-aws"]
+native-tls = ["pimalaya-toolbox?/native-tls"]
 
 [[bin]]
 name = "discovery"

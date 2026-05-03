@@ -1,5 +1,7 @@
 #[cfg(feature = "cli")]
-pub mod command;
+pub mod cli;
+#[cfg(feature = "client")]
+pub mod client;
 pub mod dns_mx;
 pub mod dns_srv;
 pub mod isp;

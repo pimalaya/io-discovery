@@ -43,9 +43,11 @@ use thiserror::Error;
 use url::{ParseError, Url};
 
 use crate::{
-    dns_txt::{DiscoveryDnsTxt, DiscoveryDnsTxtError, DiscoveryDnsTxtResult},
-    http_get::{HttpGet, HttpGetError, HttpGetResult},
     pacc::types::PaccConfig,
+    shared::{
+        dns_txt::{DiscoveryDnsTxt, DiscoveryDnsTxtError, DiscoveryDnsTxtResult},
+        http_get::{HttpGet, HttpGetError, HttpGetResult},
+    },
 };
 
 /// Errors that can occur during a single PACC discovery.

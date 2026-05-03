@@ -1,9 +1,9 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 #[cfg(feature = "autoconfig")]
-use io_discovery::autoconfig::command::AutoconfigCommand;
+use io_discovery::autoconfig::cli::AutoconfigCommand;
 #[cfg(feature = "pacc")]
-use io_discovery::pacc::command::PaccCommand;
+use io_discovery::pacc::cli::PaccCommand;
 use pimalaya_cli::{
     clap::{
         args::{JsonFlag, LogFlags},

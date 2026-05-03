@@ -4,14 +4,12 @@
 
 #[macro_use]
 extern crate alloc;
-#[cfg(feature = "cli")]
+#[cfg(any(feature = "client", feature = "cli"))]
 extern crate std;
 
 #[cfg(feature = "autoconfig")]
 pub mod autoconfig;
-#[cfg(any(feature = "autoconfig", feature = "pacc"))]
-pub mod dns_txt;
-#[cfg(any(feature = "autoconfig", feature = "pacc"))]
-pub mod http_get;
 #[cfg(feature = "pacc")]
 pub mod pacc;
+#[cfg(any(feature = "autoconfig", feature = "pacc"))]
+pub mod shared;

@@ -41,7 +41,7 @@ use url::{ParseError, Url};
 
 use crate::{
     autoconfig::types::Autoconfig,
-    http_get::{HttpGet, HttpGetError, HttpGetResult},
+    shared::http_get::{HttpGet, HttpGetError, HttpGetResult},
 };
 
 /// Errors that can occur during a single ISP autoconfig HTTP exchange.
@@ -76,7 +76,7 @@ pub struct DiscoveryIsp {
 impl DiscoveryIsp {
     /// Builds the URL for the main ISP location
     /// (`http[s]://autoconfig.<domain>/mail/config-v1.1.xml?...`).
-    pub fn isp_url(
+    pub fn main_url(
         local_part: impl AsRef<str>,
         domain: impl AsRef<str>,
         secure: bool,
@@ -91,7 +91,7 @@ impl DiscoveryIsp {
 
     /// Builds the URL for the alternative ISP location
     /// (`http[s]://<domain>/.well-known/autoconfig/mail/config-v1.1.xml`).
-    pub fn isp_fallback_url(domain: impl AsRef<str>, secure: bool) -> Result<Url, ParseError> {
+    pub fn fallback_url(domain: impl AsRef<str>, secure: bool) -> Result<Url, ParseError> {
         let domain = domain.as_ref().trim_matches('.');
         let s = if secure { "s" } else { "" };
         let url = format!("http{s}://{domain}/.well-known/autoconfig/mail/config-v1.1.xml");
@@ -100,7 +100,7 @@ impl DiscoveryIsp {
 
     /// Builds the URL for the Thunderbird ISPDB
     /// (`http[s]://autoconfig.thunderbird.net/v1.1/<domain>`).
-    pub fn ispdb_url(domain: impl AsRef<str>, secure: bool) -> Result<Url, ParseError> {
+    pub fn db_url(domain: impl AsRef<str>, secure: bool) -> Result<Url, ParseError> {
         let domain = domain.as_ref().trim_matches('.');
         let s = if secure { "s" } else { "" };
         let url = format!("http{s}://autoconfig.thunderbird.net/v1.1/{domain}");
@@ -115,11 +115,11 @@ impl DiscoveryIsp {
         let domain = domain.as_ref();
 
         Ok([
-            Self::isp_url(local_part, domain, true)?,
-            Self::isp_url(local_part, domain, false)?,
-            Self::isp_fallback_url(domain, true)?,
-            Self::isp_fallback_url(domain, false)?,
-            Self::ispdb_url(domain, true)?,
+            Self::main_url(local_part, domain, true)?,
+            Self::main_url(local_part, domain, false)?,
+            Self::fallback_url(domain, true)?,
+            Self::fallback_url(domain, false)?,
+            Self::db_url(domain, true)?,
         ])
     }
 

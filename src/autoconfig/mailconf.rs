@@ -25,7 +25,7 @@ use log::trace;
 use thiserror::Error;
 use url::Url;
 
-use crate::dns_txt::{DiscoveryDnsTxt, DiscoveryDnsTxtError, DiscoveryDnsTxtResult};
+use crate::shared::dns_txt::{DiscoveryDnsTxt, DiscoveryDnsTxtError, DiscoveryDnsTxtResult};
 
 const MAILCONF_PREFIX: &[u8] = b"mailconf=";
 
