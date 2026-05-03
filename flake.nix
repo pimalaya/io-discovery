@@ -1,5 +1,5 @@
 {
-  description = "I/O-free discovery client library written in Rust";
+  description = "Discovery client library and CLI written in Rust";
 
   inputs = {
     nixpkgs = {
@@ -19,5 +19,6 @@
     inputs:
     (import inputs.pimalaya).mkFlakeOutputs inputs {
       shell = ./shell.nix;
+      default = ./default.nix;
     };
 }

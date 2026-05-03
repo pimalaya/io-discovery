@@ -1,6 +1,6 @@
 [package]
 name = "io-discovery"
-description = "I/O-free discovery client library"
+description = "Discovery client library and CLI"
 version = "0.0.1"
 authors = ["Clément DOUIN <pimalaya.org@posteo.net>"]
 rust-version = "1.87"
