@@ -1,18 +1,18 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 #[cfg(feature = "autoconfig")]
-use io_discovery::autoconfig::command::AutoconfigCommand;
-use pimalaya_toolbox::{
-    long_version,
-    terminal::{
-        clap::{
-            args::{JsonFlag, LogFlags},
-            commands::{CompletionCommand, ManualCommand},
-        },
-        error::ErrorReport,
-        log::Logger,
-        printer::{Printer, StdoutPrinter},
+use io_discovery::autoconfig::cli::AutoconfigCommand;
+#[cfg(feature = "pacc")]
+use io_discovery::pacc::cli::PaccCommand;
+use pimalaya_cli::{
+    clap::{
+        args::{JsonFlag, LogFlags},
+        commands::{CompletionCommand, ManualCommand},
     },
+    error::ErrorReport,
+    log::Logger,
+    long_version,
+    printer::{Printer, StdoutPrinter},
 };
 
 fn main() {
@@ -45,6 +45,8 @@ enum DiscoveryCommand {
     #[cfg(feature = "autoconfig")]
     #[command(subcommand)]
     Autoconfig(AutoconfigCommand),
+    #[cfg(feature = "pacc")]
+    Pacc(PaccCommand),
     Completions(CompletionCommand),
     Manuals(ManualCommand),
 }
@@ -54,6 +56,8 @@ impl DiscoveryCommand {
         match self {
             #[cfg(feature = "autoconfig")]
             Self::Autoconfig(cmd) => cmd.execute(printer),
+            #[cfg(feature = "pacc")]
+            Self::Pacc(cmd) => cmd.execute(printer),
             Self::Completions(cmd) => cmd.execute(printer, DiscoveryCli::command()),
             Self::Manuals(cmd) => cmd.execute(printer, DiscoveryCli::command()),
         }

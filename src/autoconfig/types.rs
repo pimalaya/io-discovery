@@ -12,14 +12,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AutoConfig {
+pub struct Autoconfig {
     pub version: String,
     pub email_provider: EmailProvider,
     #[serde(rename = "oAuth2")]
     pub oauth2: Option<OAuth2Config>,
 }
 
-impl fmt::Display for AutoConfig {
+impl fmt::Display for Autoconfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:#?}", self)
     }
@@ -32,6 +32,22 @@ pub struct EmailProvider {
     pub properties: Vec<EmailProviderProperty>,
 }
 
+impl EmailProvider {
+    pub fn incoming_servers(&self) -> impl Iterator<Item = &Server> {
+        self.properties.iter().filter_map(|p| match p {
+            EmailProviderProperty::IncomingServer(s) => Some(s),
+            _ => None,
+        })
+    }
+
+    pub fn outgoing_servers(&self) -> impl Iterator<Item = &Server> {
+        self.properties.iter().filter_map(|p| match p {
+            EmailProviderProperty::OutgoingServer(s) => Some(s),
+            _ => None,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EmailProviderProperty {
@@ -41,6 +57,7 @@ pub enum EmailProviderProperty {
     IncomingServer(Server),
     OutgoingServer(Server),
     Documentation(Documentation),
+    Instruction(Instruction),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -48,6 +65,43 @@ pub struct Server {
     pub r#type: ServerType,
     #[serde(rename = "$value")]
     pub properties: Vec<ServerProperty>,
+}
+
+impl Server {
+    pub fn hostname(&self) -> Option<&str> {
+        self.properties.iter().find_map(|p| match p {
+            ServerProperty::Hostname(h) => Some(h.as_str()),
+            _ => None,
+        })
+    }
+
+    pub fn port(&self) -> Option<u16> {
+        self.properties.iter().find_map(|p| match p {
+            ServerProperty::Port(p) => Some(*p),
+            _ => None,
+        })
+    }
+
+    pub fn security_type(&self) -> Option<&SecurityType> {
+        self.properties.iter().find_map(|p| match p {
+            ServerProperty::SocketType(s) => Some(s),
+            _ => None,
+        })
+    }
+
+    pub fn username(&self) -> Option<&str> {
+        self.properties.iter().find_map(|p| match p {
+            ServerProperty::Username(u) => Some(u.as_str()),
+            _ => None,
+        })
+    }
+
+    pub fn authentication_types(&self) -> impl Iterator<Item = &AuthenticationType> {
+        self.properties.iter().filter_map(|p| match p {
+            ServerProperty::Authentication(a) => Some(a),
+            _ => None,
+        })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -118,6 +172,13 @@ pub struct CheckInterval {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Documentation {
+    pub url: String,
+    #[serde(default, rename = "$value")]
+    pub properties: Vec<DocumentationDescription>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Instruction {
     pub url: String,
     #[serde(default, rename = "$value")]
     pub properties: Vec<DocumentationDescription>,
