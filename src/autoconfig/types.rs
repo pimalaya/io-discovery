@@ -12,14 +12,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AutoConfig {
+pub struct Autoconfig {
     pub version: String,
     pub email_provider: EmailProvider,
     #[serde(rename = "oAuth2")]
     pub oauth2: Option<OAuth2Config>,
 }
 
-impl fmt::Display for AutoConfig {
+impl fmt::Display for Autoconfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:#?}", self)
     }
@@ -57,6 +57,7 @@ pub enum EmailProviderProperty {
     IncomingServer(Server),
     OutgoingServer(Server),
     Documentation(Documentation),
+    Instruction(Instruction),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -171,6 +172,13 @@ pub struct CheckInterval {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Documentation {
+    pub url: String,
+    #[serde(default, rename = "$value")]
+    pub properties: Vec<DocumentationDescription>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Instruction {
     pub url: String,
     #[serde(default, rename = "$value")]
     pub properties: Vec<DocumentationDescription>,

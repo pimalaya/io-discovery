@@ -46,7 +46,6 @@ enum DiscoveryCommand {
     #[command(subcommand)]
     Autoconfig(AutoconfigCommand),
     #[cfg(feature = "pacc")]
-    #[command(subcommand)]
     Pacc(PaccCommand),
     Completions(CompletionCommand),
     Manuals(ManualCommand),

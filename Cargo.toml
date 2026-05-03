@@ -25,6 +25,11 @@ rustls-ring = ["pimalaya-toolbox/rustls-ring"]
 rustls-aws = ["pimalaya-toolbox/rustls-aws"]
 native-tls = ["pimalaya-toolbox/native-tls"]
 
+[[bin]]
+name = "discovery"
+path = "src/main.rs"
+required-features = ["cli"]
+
 [build-dependencies]
 pimalaya-cli = { version = "0.0.1", default-features = false, features = ["build"], optional = true }
 

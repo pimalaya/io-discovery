@@ -1,8 +1,11 @@
-#![cfg_attr(not(feature = "cli"), no_std)]
+#![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![doc = include_str!("../README.md")]
 
+#[macro_use]
 extern crate alloc;
+#[cfg(feature = "cli")]
+extern crate std;
 
 #[cfg(feature = "autoconfig")]
 pub mod autoconfig;

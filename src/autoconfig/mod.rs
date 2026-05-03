@@ -3,4 +3,5 @@ pub mod command;
 pub mod dns_mx;
 pub mod dns_srv;
 pub mod isp;
-pub mod serde;
+pub mod mailconf;
+pub mod types;

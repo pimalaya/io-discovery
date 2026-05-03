@@ -85,8 +85,8 @@ pub struct DiscoveryDnsTxt {
 }
 
 impl DiscoveryDnsTxt {
-    /// Returns a coroutine ready to build and emit a DNS TXT query for
-    /// `domain` on the first [`resume`].
+    /// Returns a coroutine ready to build and emit a DNS TXT query
+    /// for `domain` on the first [`resume`].
     ///
     /// [`resume`]: DiscoveryDnsTxt::resume
     pub fn new(domain: impl ToString) -> Self {
@@ -121,7 +121,7 @@ impl DiscoveryDnsTxt {
                         }
                     };
 
-                    let mut buf = [0u8; QUERY_BUF_SIZE];
+                    let mut buf = vec![0u8; QUERY_BUF_SIZE];
                     let mut compressor = NameCompressor::default();
                     let mut builder = MessageBuilder::new(
                         &mut buf[2..],
@@ -143,8 +143,9 @@ impl DiscoveryDnsTxt {
 
                     let msg_len = builder.finish().as_bytes().len();
                     buf[0..2].copy_from_slice(&(msg_len as u16).to_be_bytes());
+                    buf.truncate(msg_len + 2);
 
-                    self.wants_write = Some(buf[..2 + msg_len].to_vec());
+                    self.wants_write = Some(buf);
                     self.wants_read = true;
                     self.state = State::ParseResponse;
                 }

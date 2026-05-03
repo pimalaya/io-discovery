@@ -40,7 +40,7 @@ use thiserror::Error;
 use url::{ParseError, Url};
 
 use crate::{
-    autoconfig::serde::AutoConfig,
+    autoconfig::types::Autoconfig,
     http_get::{HttpGet, HttpGetError, HttpGetResult},
 };
 
@@ -58,7 +58,7 @@ pub enum DiscoveryIspError {
 /// Output emitted when the coroutine progresses or terminates.
 pub enum DiscoveryIspResult {
     /// The fetch successfully decoded an autoconfig.
-    Ok(AutoConfig),
+    Ok(Autoconfig),
     /// The fetch wants more bytes to be read from the socket.
     WantsRead,
     /// The fetch wants the given bytes to be written to the socket.

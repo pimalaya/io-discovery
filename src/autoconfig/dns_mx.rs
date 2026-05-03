@@ -232,13 +232,24 @@ impl DiscoveryDnsMx {
 
 /// Strips the leftmost label of an MX target so that ISP autoconfig
 /// URLs can be retried against the registrable parent
-/// (`mx.example.com` → `example.com`). Returns `None` for single-label
-/// inputs.
+/// (`mx.example.com` → `example.com`). Returns `None` for inputs with
+/// fewer than two dots after trailing-dot trimming.
 pub fn mx_parent_domain(target: &str) -> Option<String> {
     let target = target.trim_end_matches('.');
-    let labels: Vec<&str> = target.split('.').collect();
-    if labels.len() < 3 {
-        return None;
+
+    let mut first_dot = None;
+
+    for (i, b) in target.bytes().enumerate() {
+        if b != b'.' {
+            continue;
+        }
+
+        if let Some(start) = first_dot {
+            return Some(target[start + 1..].to_string());
+        }
+
+        first_dot = Some(i);
     }
-    Some(labels[1..].join("."))
+
+    None
 }

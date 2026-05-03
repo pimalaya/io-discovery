@@ -69,15 +69,12 @@ impl HttpGet {
                 trace!("{response:?}");
                 HttpGetResult::Err(HttpGetError::Status(*response.status))
             }
-
             Http11SendResult::Ok { response, .. } => {
                 trace!("{response:?}");
                 HttpGetResult::Ok(response.body)
             }
-
             Http11SendResult::WantsRead => HttpGetResult::WantsRead,
             Http11SendResult::WantsWrite(bytes) => HttpGetResult::WantsWrite(bytes),
-
             Http11SendResult::WantsRedirect { response, url, .. } => {
                 trace!("{response:?}");
                 HttpGetResult::Err(HttpGetError::Redirect {
@@ -85,7 +82,6 @@ impl HttpGet {
                     code: *response.status,
                 })
             }
-
             Http11SendResult::Err(err) => HttpGetResult::Err(err.into()),
         }
     }

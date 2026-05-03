@@ -1,8 +1,16 @@
 use std::{
     io::{Read, Write},
     net::TcpStream,
+    println,
 };
 
+use alloc::{
+    borrow::ToOwned,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 use anyhow::{Result, anyhow, bail};
 use clap::Subcommand;
 use domain::new::{base::name::NameBuf, rdata::Srv};
@@ -12,19 +20,9 @@ use pimalaya_toolbox::stream::http::HttpSession;
 use url::Url;
 
 use crate::{
-    autoconfig::{
-        dns_mx::*,
-        dns_srv::*,
-        isp::*,
-        serde::{
-            AuthenticationType, AutoConfig, EmailProvider, EmailProviderProperty, SecurityType,
-            Server, ServerProperty, ServerType,
-        },
-    },
+    autoconfig::{dns_mx::*, dns_srv::*, isp::*, types::*},
     dns_txt::*,
 };
-
-const DEFAULT_DNS_SERVER: &str = "1.1.1.1:53";
 
 const MAILCONF_PREFIX: &[u8] = b"mailconf=";
 
@@ -63,24 +61,24 @@ pub enum AutoconfigCommand {
     /// Look up MX records for the given domain.
     DnsMx {
         domain: String,
-        #[arg(long)]
-        server: Option<String>,
+        #[arg(long, default_value = "1.1.1.1:53")]
+        server: String,
     },
 
     /// Look up the mailconf URL declared by a TXT record on the
     /// domain.
     DnsTxtMailconf {
         domain: String,
-        #[arg(long)]
-        server: Option<String>,
+        #[arg(long, default_value = "1.1.1.1:53")]
+        server: String,
     },
 
     /// Build an autoconfig from the SRV records for `_imap._tcp`,
     /// `_imaps._tcp`, and `_submission._tcp` under the domain.
     DnsSrv {
         domain: String,
-        #[arg(long)]
-        server: Option<String>,
+        #[arg(long, default_value = "1.1.1.1:53")]
+        server: String,
     },
 
     /// Run the whole discovery: ISP iteration, then DNS MX (re-run
@@ -88,8 +86,8 @@ pub enum AutoconfigCommand {
     Full {
         local_part: String,
         domain: String,
-        #[arg(long)]
-        server: Option<String>,
+        #[arg(long, default_value = "1.1.1.1:53")]
+        server: String,
     },
 }
 
@@ -182,7 +180,6 @@ impl AutoconfigCommand {
             }
 
             Self::DnsMx { domain, server } => {
-                let server = server.as_deref().unwrap_or(DEFAULT_DNS_SERVER);
                 let mut stream = TcpStream::connect(server)?;
 
                 let mut dns = DiscoveryDnsMx::new(domain);
@@ -212,7 +209,6 @@ impl AutoconfigCommand {
             }
 
             Self::DnsTxtMailconf { domain, server } => {
-                let server = server.as_deref().unwrap_or(DEFAULT_DNS_SERVER);
                 let mut stream = TcpStream::connect(server)?;
 
                 let mut txt = DiscoveryDnsTxt::new(&domain);
@@ -250,14 +246,12 @@ impl AutoconfigCommand {
             }
 
             Self::DnsSrv { domain, server } => {
-                let server = server.as_deref().unwrap_or(DEFAULT_DNS_SERVER);
-
                 let mut buf = [0u8; 4096];
                 let mut bests: [Option<Srv<NameBuf>>; 3] = [None, None, None];
 
                 for (i, service) in ["imap", "imaps", "submission"].iter().enumerate() {
                     let qname = format!("_{service}._tcp.{domain}");
-                    let mut stream = TcpStream::connect(server)?;
+                    let mut stream = TcpStream::connect(&server)?;
 
                     let mut srv = DiscoveryDnsSrv::new(&qname);
                     let mut arg = None;
@@ -282,7 +276,7 @@ impl AutoconfigCommand {
 
                 let [imap, imaps, submission] = bests;
 
-                let mut config = AutoConfig {
+                let mut config = Autoconfig {
                     version: "1.1".to_owned(),
                     email_provider: EmailProvider {
                         id: domain.clone(),
@@ -335,6 +329,7 @@ impl AutoconfigCommand {
                         587 => SecurityType::Starttls,
                         _ => SecurityType::Tls,
                     };
+
                     config
                         .email_provider
                         .properties
@@ -365,10 +360,9 @@ impl AutoconfigCommand {
                 domain,
                 server,
             } => {
-                let dns_server = server.as_deref().unwrap_or(DEFAULT_DNS_SERVER);
                 let mut buf = [0u8; 8192];
 
-                let autoconfig: AutoConfig = 'discover: {
+                let autoconfig: Autoconfig = 'discover: {
                     // ---- 1. ISP iteration on the user's domain ----
                     for url in DiscoveryIsp::all_urls(&local_part, &domain)? {
                         trace!("trying autoconfig at {url}");
@@ -405,7 +399,7 @@ impl AutoconfigCommand {
                     // ---- 2. DNS MX, then ISP iteration on the parent of
                     //         the best MX target ----
                     let mx_records = {
-                        let mut stream = TcpStream::connect(dns_server)?;
+                        let mut stream = TcpStream::connect(&server)?;
                         let mut dns = DiscoveryDnsMx::new(&domain);
                         let mut arg = None;
                         loop {
@@ -467,7 +461,7 @@ impl AutoconfigCommand {
 
                     // ---- 3. DNS TXT mailconf, then fetch the URL it points to ----
                     let txt_records = {
-                        let mut stream = TcpStream::connect(dns_server)?;
+                        let mut stream = TcpStream::connect(&server)?;
                         let mut txt = DiscoveryDnsTxt::new(&domain);
                         let mut arg = None;
                         loop {
@@ -529,7 +523,7 @@ impl AutoconfigCommand {
 
                     for (i, service) in ["imap", "imaps", "submission"].iter().enumerate() {
                         let qname = format!("_{service}._tcp.{domain}");
-                        let mut stream = TcpStream::connect(dns_server)?;
+                        let mut stream = TcpStream::connect(&server)?;
                         let mut srv = DiscoveryDnsSrv::new(&qname);
                         let mut arg = None;
 
@@ -553,7 +547,7 @@ impl AutoconfigCommand {
 
                     let [imap, imaps, submission] = bests;
 
-                    let mut config = AutoConfig {
+                    let mut config = Autoconfig {
                         version: "1.1".to_owned(),
                         email_provider: EmailProvider {
                             id: domain.clone(),
