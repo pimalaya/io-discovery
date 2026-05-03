@@ -317,6 +317,7 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.12.0"
+source = "git+https://github.com/soywod/domain?branch=new-srv#2a72dc6f55212d8b72b046992bc229bfdac48887"
 dependencies = [
  "bumpalo",
  "bytes",
@@ -329,6 +330,7 @@ dependencies = [
 [[package]]
 name = "domain-macros"
 version = "0.12.0"
+source = "git+https://github.com/soywod/domain?branch=new-srv#2a72dc6f55212d8b72b046992bc229bfdac48887"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -663,6 +665,7 @@ dependencies = [
 [[package]]
 name = "io-http"
 version = "0.0.3"
+source = "git+https://github.com/pimalaya/io-http#c299cf8bc7512507a0e108561e10eaf4194de1a5"
 dependencies = [
  "base64",
  "httparse",
@@ -944,6 +947,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "pimalaya-cli"
 version = "0.0.1"
+source = "git+https://github.com/pimalaya/cli#345e167290112ff3206a2dca62f880b3e2e6c0ad"
 dependencies = [
  "anyhow",
  "clap",
@@ -961,6 +965,7 @@ dependencies = [
 [[package]]
 name = "pimalaya-toolbox"
 version = "0.0.4"
+source = "git+https://github.com/pimalaya/toolbox#3a21144bd5bee194340401055104c3550de0e054"
 dependencies = [
  "anyhow",
  "log",

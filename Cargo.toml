@@ -56,13 +56,7 @@ thiserror = { version = "2", default-features = false }
 url = { version = "2.2", default-features = false, optional = true }
 
 [patch.crates-io]
-domain.path = "../../domain"
-io-http.path = "../io-http"
-pimalaya-cli.path = "../cli"
-pimalaya-toolbox.path = "../toolbox"
-
-# [patch.crates-io]
-# domain = { git = "https://github.com/soywod/domain", branch = "new-srv" }
-# io-http.git = "https://github.com/pimalaya/io-http"
-# pimalaya-cli.git = "https://github.com/pimalaya/cli"
-# pimalaya-toolbox.git = "https://github.com/pimalaya/toolbox"
+domain = { git = "https://github.com/soywod/domain", branch = "new-srv" }
+io-http.git = "https://github.com/pimalaya/io-http"
+pimalaya-cli.git = "https://github.com/pimalaya/cli"
+pimalaya-toolbox.git = "https://github.com/pimalaya/toolbox"
