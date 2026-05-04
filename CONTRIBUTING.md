@@ -1,6 +1,6 @@
 # Contributing guide
 
-Thank you for investing your time in contributing to the I/O discovery project.
+Thank you for investing your time in contributing to the I/O Discovery project.
 
 ## Development
 
@@ -42,4 +42,4 @@ io-http.path = "/path/to/io-http"
 
 ## Commit style
 
-I/O discovery follows the [conventional commits specification](https://www.conventionalcommits.org/en/v1.0.0/#summary).
+I/O Discovery follows the [conventional commits specification](https://www.conventionalcommits.org/en/v1.0.0/#summary).

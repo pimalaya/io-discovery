@@ -1,6 +1,12 @@
-# I/O discovery [![Documentation](https://img.shields.io/docsrs/io-discovery?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/io-discovery/latest/io_discovery) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya)
+# I/O Discovery [![Documentation](https://img.shields.io/docsrs/io-discovery?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/io-discovery/latest/io_discovery) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya)
 
 Client library and CLI to discover PIM-related services, written in Rust
+
+This repository ships **three things in one**:
+
+- Low-level, **I/O-free** coroutines: pure state machines that emit read/write requests, runtime-agnostic, `no_std`-friendly;
+- Mid-level, standard blocking client library: thin runtime that drives each coroutine against a caller-provided `Read + Write` stream;
+- High-level, CLI binary `discover`: drives the full discovery chain, or any single step, against a real network.
 
 ## Table of contents
 
@@ -17,12 +23,6 @@ Client library and CLI to discover PIM-related services, written in Rust
 - [Sponsoring](#sponsoring)
 
 ## Features
-
-This repository ships **three things in one**:
-
-- Low-level, **I/O-free** coroutines: pure state machines that emit read/write requests, runtime-agnostic, `no_std`-friendly;
-- Mid-level, standard blocking client library: thin runtime that drives each coroutine against a caller-provided `Read + Write` stream;
-- High-level, CLI binary `discover`: drives the full discovery chain, or any single step, against a real network.
 
 - **Mozilla Thunderbird Autoconfiguration** support <sup>[wiki](https://wiki.mozilla.org/Thunderbird:Autoconfiguration)</sup> (requires `autoconfig` feature):
   - ISP main and `/.well-known/` URL lookups
