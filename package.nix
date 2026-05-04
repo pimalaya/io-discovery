@@ -7,24 +7,26 @@
   fetchFromGitHub,
   buildPackages,
   stdenv,
+  openssl,
+  pkg-config,
   installShellFiles,
   installShellCompletions ? stdenv.buildPlatform.canExecute stdenv.hostPlatform,
   installManPages ? stdenv.buildPlatform.canExecute stdenv.hostPlatform,
   buildNoDefaultFeatures ? false,
   buildFeatures ? [ ],
-  ...
 }:
 
 let
-  version = "1.0.0";
+  version = "0.0.1";
   hash = "";
   cargoHash = "";
+  hasNativeTlsFeature = builtins.elem "native-tls" buildFeatures;
 
 in
 rustPlatform.buildRustPackage {
   inherit cargoHash version buildNoDefaultFeatures;
 
-  pname = "discovery";
+  pname = "discover";
 
   src = fetchFromGitHub {
     inherit hash;
@@ -33,7 +35,17 @@ rustPlatform.buildRustPackage {
     rev = "v${version}";
   };
 
-  nativeBuildInputs = lib.optional (installManPages || installShellCompletions) installShellFiles;
+  env = {
+    # OpenSSL should not be provided by vendors, not even on Windows
+    OPENSSL_NO_VENDOR = "1";
+  };
+
+  nativeBuildInputs = [
+    pkg-config
+    installShellFiles
+  ];
+
+  buildInputs = lib.optional hasNativeTlsFeature openssl;
 
   buildFeatures = [ "cli" ] ++ buildFeatures;
 
@@ -50,24 +62,27 @@ rustPlatform.buildRustPackage {
     ''
     + ''
       mkdir -p $out/share/{completions,man}
-      ${emulator} "$out"/bin/discovery${exe} manuals "$out"/share/man
-      ${emulator} "$out"/bin/discovery${exe} completions -d "$out"/share/completions bash elvish fish powershell zsh
+      ${emulator} "$out"/bin/discover${exe} manuals "$out"/share/man
+      ${emulator} "$out"/bin/discover${exe} completions -d "$out"/share/completions bash elvish fish powershell zsh
     ''
     + lib.optionalString installManPages ''
       installManPage "$out"/share/man/*
     ''
     + lib.optionalString installShellCompletions ''
-      installShellCompletion --bash "$out"/share/completions/discovery.bash
-      installShellCompletion --fish "$out"/share/completions/discovery.fish
-      installShellCompletion --zsh "$out"/share/completions/_discovery
+      installShellCompletion --bash "$out"/share/completions/discover.bash
+      installShellCompletion --fish "$out"/share/completions/discover.fish
+      installShellCompletion --zsh "$out"/share/completions/_discover
     '';
 
   meta = rec {
-    description = "CLI to manage timers";
-    mainProgram = "discovery";
+    description = "Client library and CLI to discover PIM-related services, written in Rust";
+    mainProgram = "discover";
     homepage = "https://github.com/pimalaya/io-discovery";
     changelog = "${homepage}/blob/v${version}/CHANGELOG.md";
-    license = lib.licenses.agpl3Plus;
+    license = with lib.licenses; [
+      mit
+      asl20
+    ];
     maintainers = with lib.maintainers; [ soywod ];
   };
 }

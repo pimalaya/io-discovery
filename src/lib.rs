@@ -2,6 +2,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![doc = include_str!("../README.md")]
 
+#[allow(unused_imports)]
 #[macro_use]
 extern crate alloc;
 #[cfg(any(feature = "client", feature = "cli"))]

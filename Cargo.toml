@@ -1,6 +1,6 @@
 [package]
 name = "io-discovery"
-description = "Discovery client library and CLI"
+description = "Client library and CLI to discover PIM-related services"
 version = "0.0.1"
 authors = ["Clément DOUIN <pimalaya.org@posteo.net>"]
 rust-version = "1.87"
@@ -18,21 +18,37 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["autoconfig", "pacc", "client", "rustls-ring"]
-client = ["dep:pimalaya-toolbox", "pimalaya-toolbox/http"]
-cli = ["client", "dep:anyhow", "dep:clap", "dep:pimalaya-cli", "pimalaya-cli/terminal"]
+client = []
+cli = ["dep:anyhow", "dep:clap", "dep:pimalaya-stream", "pimalaya-cli/terminal", "pimalaya-cli/table", "pimalaya-stream/http", "pimalaya-stream/std", "client"]
 autoconfig = ["dep:io-http", "dep:serde", "dep:serde-xml-rs", "dep:url"]
 pacc = ["dep:io-http", "dep:serde", "dep:serde_json", "dep:url", "dep:base64", "dep:sha2", "dep:subtle"]
-rustls-ring = ["pimalaya-toolbox?/rustls-ring"]
-rustls-aws = ["pimalaya-toolbox?/rustls-aws"]
-native-tls = ["pimalaya-toolbox?/native-tls"]
+rustls-ring = ["pimalaya-stream?/rustls-ring"]
+rustls-aws = ["pimalaya-stream?/rustls-aws"]
+native-tls = ["pimalaya-stream?/native-tls"]
+vendored = ["pimalaya-stream?/vendored"]
+
+[[example]]
+name = "autoconfig-dns-mx"
+path = "examples/autoconfig_dns_mx.rs"
+required-features = ["autoconfig"]
+
+[[example]]
+name = "pacc-client"
+path = "examples/pacc_client.rs"
+required-features = ["pacc", "client"]
 
 [[bin]]
-name = "discovery"
+name = "discover"
 path = "src/main.rs"
 required-features = ["cli"]
 
 [build-dependencies]
 pimalaya-cli = { version = "0.0.1", default-features = false, features = ["build"], optional = true }
+
+[dev-dependencies]
+env_logger = "0.11"
+rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }
+rustls-platform-verifier = "0.7"
 
 [dependencies]
 anyhow = { version = "1", default-features = false, optional = true }
@@ -42,7 +58,7 @@ domain = { version = "0.12", default-features = false, features = ["alloc", "std
 io-http = { version = "0.0.3", default-features = false, optional = true }
 log = { version = "0.4", default-features = false }
 pimalaya-cli = { version = "0.0.1", default-features = false, optional = true }
-pimalaya-toolbox = { version = "0.0.4", default-features = false, optional = true }
+pimalaya-stream = { version = "0.0.1", default-features = false, features = ["std"], optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde-xml-rs = { version = "0.7", optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc"], optional = true }
@@ -55,4 +71,4 @@ url = { version = "2.2", default-features = false, optional = true }
 domain = { git = "https://github.com/soywod/domain", branch = "new-srv" }
 io-http.git = "https://github.com/pimalaya/io-http"
 pimalaya-cli.git = "https://github.com/pimalaya/cli"
-pimalaya-toolbox.git = "https://github.com/pimalaya/toolbox"
+pimalaya-stream.git = "https://github.com/pimalaya/stream"

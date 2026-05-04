@@ -1,33 +1,15 @@
-//! # Per-URL ISP autoconfig HTTP+XML fetch.
+//! # Per-URL ISP autoconfig HTTP+XML fetch
 //!
 //! [`DiscoveryIsp`] is a single-URL fetch coroutine: it drives one
 //! [`HttpGet`] cycle and parses the response body as a Mozilla
 //! [Autoconfiguration] XML document. URL selection is the runtime's
 //! responsibility — pair this coroutine with the static URL helpers
-//! ([`isp_url`], [`isp_fallback_url`], [`ispdb_url`], [`all_urls`]).
-//!
-//! Typical driver shape:
-//!
-//! ```ignore
-//! for url in DiscoveryIsp::all_urls(local, domain) {
-//!     let Ok(mut http) = HttpSession::new(url.clone(), ...) else { continue };
-//!     let mut isp = DiscoveryIsp::new(url);
-//!     let mut arg = None;
-//!     loop {
-//!         match isp.resume(arg) {
-//!             DiscoveryIspResult::Ok(c)         => return Ok(c),
-//!             DiscoveryIspResult::WantsWrite(b) => { http.stream.write(&b)?; arg = None; }
-//!             DiscoveryIspResult::WantsRead     => { let n = http.stream.read(&mut buf)?; arg = Some(&buf[..n]); }
-//!             DiscoveryIspResult::Err(_)        => break,
-//!         }
-//!     }
-//! }
-//! ```
+//! ([`main_url`], [`fallback_url`], [`db_url`], [`all_urls`]).
 //!
 //! [Autoconfiguration]: https://wiki.mozilla.org/Thunderbird:Autoconfiguration
-//! [`isp_url`]: DiscoveryIsp::isp_url
-//! [`isp_fallback_url`]: DiscoveryIsp::isp_fallback_url
-//! [`ispdb_url`]: DiscoveryIsp::ispdb_url
+//! [`main_url`]: DiscoveryIsp::main_url
+//! [`fallback_url`]: DiscoveryIsp::fallback_url
+//! [`db_url`]: DiscoveryIsp::db_url
 //! [`all_urls`]: DiscoveryIsp::all_urls
 
 use alloc::{
@@ -107,6 +89,9 @@ impl DiscoveryIsp {
         Url::parse(&url)
     }
 
+    /// Returns the five candidate URLs the runtime should try in
+    /// order: secure and plaintext flavors of [`Self::main_url`] and
+    /// [`Self::fallback_url`], then [`Self::db_url`] (secure only).
     pub fn all_urls(
         local_part: impl AsRef<str>,
         domain: impl AsRef<str>,

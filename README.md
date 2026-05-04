@@ -1,20 +1,221 @@
 # I/O discovery [![Documentation](https://img.shields.io/docsrs/io-discovery?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/io-discovery/latest/io_discovery) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya)
 
-**I/O-free** discovery client library written in Rust, based on [io-socket](https://github.com/pimalaya/io-socket)
+Client library and CLI to discover PIM-related services, written in Rust
 
 ## Table of contents
 
-*TODO*
+- [Features](#features)
+- [Installation](#installation)
+  - [Cargo](#cargo)
+  - [Nix](#nix)
+  - [Sources](#sources)
+- [Usage](#usage)
+  - [Library](#library)
+  - [CLI](#cli)
+- [FAQ](#faq)
+- [Social](#social)
+- [Sponsoring](#sponsoring)
 
-## Examples
+## Features
 
-*TODO*
+This repository ships **three things in one**:
 
-## More examples
+- Low-level, **I/O-free** coroutines: pure state machines that emit read/write requests, runtime-agnostic, `no_std`-friendly;
+- Mid-level, standard blocking client library: thin runtime that drives each coroutine against a caller-provided `Read + Write` stream;
+- High-level, CLI binary `discover`: drives the full discovery chain, or any single step, against a real network.
 
-Have a look at projects built on top of this library:
+- **Mozilla Thunderbird Autoconfiguration** support <sup>[wiki](https://wiki.mozilla.org/Thunderbird:Autoconfiguration)</sup> (requires `autoconfig` feature):
+  - ISP main and `/.well-known/` URL lookups
+  - Thunderbird ISPDB lookup
+  - DNS MX-based retry against the MX target's parent domain
+  - DNS TXT `mailconf=<URL>` redirect
+  - DNS SRV (`_imap._tcp`, `_imaps._tcp`, `_submission._tcp`) assembly
+- **PACC** discovery support <sup>[draft-ietf-mailmaint-pacc-02](https://datatracker.ietf.org/doc/html/draft-ietf-mailmaint-pacc-02)</sup> (requires `pacc` feature):
+  - well-known JSON configuration fetch
+  - SHA-256 digest verification against the `_ua-auto-config` TXT record
+- **TLS** support:
+  - Native TLS support via [native-tls](https://crates.io/crates/native-tls) crate (requires `native-tls` feature)
+  - Rust TLS support via [rustls](https://crates.io/crates/rustls) crate with:
+    - AWS crypto support (requires `rustls-aws` feature)
+    - Ring crypto support (requires `rustls-ring` feature)
+- **JSON** output with `--json`
 
-- *TODO*
+*The `io-discovery` library and CLI are written in [Rust](https://www.rust-lang.org/), and rely on [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to enable or disable functionalities. Default features can be found in the `features` section of the [`Cargo.toml`](https://github.com/pimalaya/io-discovery/blob/master/Cargo.toml), or on [docs.rs](https://docs.rs/crate/io-discovery/latest/features).*
+
+## Installation
+
+### Cargo
+
+The CLI binary `discover` can be installed with [cargo](https://doc.rust-lang.org/cargo/):
+
+```ignore
+cargo install io-discovery --locked
+```
+
+You can also use the git repository for a more up-to-date (but less stable) version:
+
+```ignore
+cargo install --locked --git https://github.com/pimalaya/io-discovery.git
+```
+
+To use `io-discovery` as a library, add it to your `Cargo.toml`:
+
+```toml,ignore
+[dependencies]
+io-discovery = { version = "0.0.1", default-features = false, features = ["autoconfig", "pacc", "client"] }
+```
+
+The `client` feature pulls in the `std`-blocking helpers. Drop it (and pick only `autoconfig` and/or `pacc`) for a `no_std`-friendly, pure-coroutine build.
+
+### Nix
+
+If you have the [Flakes](https://nixos.wiki/wiki/Flakes) feature enabled:
+
+```ignore
+nix profile install github:pimalaya/io-discovery
+```
+
+*Or, from within the source tree checkout:*
+
+```ignore
+nix profile install
+```
+
+*You can also run the CLI directly without installing it:*
+
+```ignore
+nix run github:pimalaya/io-discovery -- autoconfig <local-part> <domain>
+```
+
+### Sources
+
+```ignore
+git clone https://github.com/pimalaya/io-discovery
+cd io-discovery
+nix develop --command cargo build --release
+```
+
+## Usage
+
+### Library
+
+Using a low-level DNS MX I/O-free coroutine:
+
+```rust,ignore
+let mut stream = TcpStream::connect("1.1.1.1:53").unwrap();
+
+let mut coroutine = DiscoveryDnsMx::new("fastmail.com");
+let mut buf = [0u8; 4096];
+let mut arg = None;
+
+let records = loop {
+    match coroutine.resume(arg.take()) {
+        DiscoveryDnsMxResult::Ok(records) => break records,
+        DiscoveryDnsMxResult::WantsWrite(bytes) => {
+            stream.write_all(&bytes).unwrap();
+        }
+        DiscoveryDnsMxResult::WantsRead => {
+            let n = stream.read(&mut buf).unwrap();
+            arg = Some(&buf[..n]);
+        }
+        DiscoveryDnsMxResult::Err(err) => panic!("{err}"),
+    }
+};
+
+for record in records {
+    println!("- {} {}", record.rdata.preference.get(), record.rdata.exchange);
+}
+```
+
+Using a mid-level std PACC client:
+
+```rust,ignore
+use std::{net::TcpStream, sync::Arc};
+
+use io_discovery::pacc::{client::DiscoveryPaccClientStd, coroutine::DiscoveryPacc};
+use rustls::{ClientConfig, ClientConnection, StreamOwned};
+use rustls_platform_verifier::ConfigVerifierExt;
+
+// build TLS stream to fastmail.com (HTTP GET)
+let server_name = "fastmail.com".try_into().unwrap();
+let config = ClientConfig::with_platform_verifier().unwrap();
+let conn = ClientConnection::new(Arc::new(config), server_name).unwrap();
+let http = TcpStream::connect("fastmail.com:443").unwrap();
+let https = StreamOwned::new(conn, http);
+
+// build TCP stream to fastmail.com (DNS TXT)
+let dns = TcpStream::connect("1.1.1.1:53").unwrap();
+
+// build a PACC discovery client
+let mut client = DiscoveryPaccClientStd::new(https, dns);
+
+// get verified PACC config
+let config = client.discover("fastmail.com").unwrap();
+println!("{config:#?}");
+
+// get back streams from client
+let (https, dns) = client.into_inner();
+```
+
+### CLI
+
+Run the full Thunderbird Autoconfiguration chain on `<local_part> <domain>`:
+
+```ignore
+discover autoconfig user fastmail.com
+```
+
+The chain tries — in order — every ISP main URL, every `/.well-known/` URL, the Thunderbird ISPDB, then re-tries the same against the MX target's parent domain, then a `mailconf=<URL>` TXT redirect, then SRV records assembled into an autoconfig.
+
+Drive a single step instead:
+
+```ignore
+discover autoconfig user fastmail.com isp --secure
+discover autoconfig user fastmail.com ispdb --secure
+discover autoconfig user fastmail.com mx
+discover autoconfig user fastmail.com mailconf
+discover autoconfig user fastmail.com srv
+```
+
+Run PACC discovery:
+
+```ignore
+discover pacc fastmail.com
+```
+
+JSON output:
+
+```ignore
+discover --json autoconfig user fastmail.com
+```
+
+Pick a specific TLS stack and crypto provider:
+
+```ignore
+discover --tls rustls --rustls-crypto ring autoconfig user fastmail.com
+discover --tls native-tls pacc fastmail.com
+discover --tls-cert /path/to/extra-root.pem autoconfig user fastmail.com
+```
+
+## FAQ
+
+### How to debug the CLI?
+
+Use `--log <level>` where `<level>` is one of `off`, `error`, `warn`, `info`, `debug`, `trace`:
+
+```ignore
+discover --log trace autoconfig user fastmail.com
+```
+
+The `RUST_LOG` environment variable, when set, overrides `--log` and supports per-target filters (see the [`env_logger` documentation](https://docs.rs/env_logger/latest/env_logger/#enabling-logging)).
+
+Set `RUST_BACKTRACE=1` to enable full error backtraces, including source lines where the error originated from.
+
+Logs are written to `stderr`, so they can be redirected easily to a file:
+
+```ignore
+discover --log trace autoconfig user fastmail.com 2>/tmp/discover.log
+```
 
 ## License
 

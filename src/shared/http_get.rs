@@ -1,4 +1,4 @@
-//! # Shared HTTP GET coroutine.
+//! # Shared HTTP GET coroutine
 //!
 //! [`HttpGet`] sends one HTTP/1.1 GET on a fully-qualified [`Url`]
 //! and returns the raw response body bytes. It rejects redirects and
@@ -39,8 +39,8 @@ pub enum HttpGetResult {
     WantsRead,
     /// The GET wants the given bytes to be written to the socket.
     WantsWrite(Vec<u8>),
-    /// The GET failed; the runtime should drop this URL and try the
-    /// next one.
+    /// The GET failed; the runtime should treat this URL as
+    /// unreachable.
     Err(HttpGetError),
 }
 

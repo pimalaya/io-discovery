@@ -1,6 +1,6 @@
 # Contributing guide
 
-Thank you for investing your time in contributing to the I/O DNS project.
+Thank you for investing your time in contributing to the I/O discovery project.
 
 ## Development
 
@@ -33,13 +33,13 @@ cargo test
 ## Override dependencies
 
 All Pimalaya crates use `[patch.crates-io]` to point to sibling directories.
-If you want to build io-discovery against a locally modified dependency (e.g. `io-socket`), add the following to `Cargo.toml`:
+If you want to build io-discovery against a locally modified dependency (e.g. `io-http`), add the following to `Cargo.toml`:
 
 ```toml
 [patch.crates-io]
-io-socket.path = "/path/to/io-socket"
+io-http.path = "/path/to/io-http"
 ```
 
 ## Commit style
 
-I/O DNS follows the [conventional commits specification](https://www.conventionalcommits.org/en/v1.0.0/#summary).
+I/O discovery follows the [conventional commits specification](https://www.conventionalcommits.org/en/v1.0.0/#summary).

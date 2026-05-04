@@ -1,12 +1,12 @@
-//! # DNS TXT query coroutine.
+//! # DNS TXT query coroutine
 //!
 //! [`DiscoveryDnsTxt`] sends one DNS TXT question over TCP and parses
 //! the response into TXT answer records in the order the resolver
 //! delivered them (RFC 1035 imposes no priority for TXT).
 //!
 //! TCP framing (RFC 1035 §4.2.2: 2-byte big-endian length prefix) is
-//! handled inside the coroutine, so [`WantsRead`] /
-//! [`WantsWrite`] look exactly like an HTTP exchange.
+//! handled inside the coroutine, so [`WantsRead`] / [`WantsWrite`]
+//! look exactly like an HTTP exchange.
 //!
 //! [`WantsRead`]: DiscoveryDnsTxtResult::WantsRead
 //! [`WantsWrite`]: DiscoveryDnsTxtResult::WantsWrite
@@ -34,14 +34,14 @@ use domain::{
 };
 use thiserror::Error;
 
-const QUERY_BUF_SIZE: usize = 4 * 1024;
+use crate::shared::defaults::DNS_QUERY_BUF_SIZE;
 
 /// Errors that can occur during a single DNS TXT exchange.
 #[derive(Debug, Error)]
 pub enum DiscoveryDnsTxtError {
     #[error("DNS TXT domain `{1}` is not a valid name")]
     InvalidDomain(#[source] NameParseError, String),
-    #[error("DNS TXT query did not fit in the {QUERY_BUF_SIZE}-byte buffer")]
+    #[error("DNS TXT query did not fit in the {DNS_QUERY_BUF_SIZE}-byte buffer")]
     QueryTooLarge(#[source] MessageBuildError),
     #[error("DNS TXT response could not be parsed")]
     InvalidResponse(String),
@@ -121,7 +121,7 @@ impl DiscoveryDnsTxt {
                         }
                     };
 
-                    let mut buf = vec![0u8; QUERY_BUF_SIZE];
+                    let mut buf = vec![0u8; DNS_QUERY_BUF_SIZE];
                     let mut compressor = NameCompressor::default();
                     let mut builder = MessageBuilder::new(
                         &mut buf[2..],

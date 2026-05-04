@@ -1,4 +1,4 @@
-//! # Mozilla autoconfig "mailconf" TXT discovery coroutine.
+//! # Mozilla autoconfig `mailconf=<URL>` TXT discovery coroutine
 //!
 //! [`DiscoveryMailconf`] wraps the shared [`DiscoveryDnsTxt`]
 //! coroutine to query TXT records for a domain and locate one
@@ -17,7 +17,7 @@
 //!
 //! [Autoconfiguration]: https://wiki.mozilla.org/Thunderbird:Autoconfiguration
 
-use core::str::from_utf8;
+use core::str;
 
 use alloc::{string::ToString, vec::Vec};
 
@@ -26,8 +26,6 @@ use thiserror::Error;
 use url::Url;
 
 use crate::shared::dns_txt::{DiscoveryDnsTxt, DiscoveryDnsTxtError, DiscoveryDnsTxtResult};
-
-const MAILCONF_PREFIX: &[u8] = b"mailconf=";
 
 /// Errors that can occur during a single mailconf discovery.
 #[derive(Debug, Error)]
@@ -82,12 +80,12 @@ impl DiscoveryMailconf {
                         joined.extend_from_slice(&cs.octets);
                     }
 
-                    let Some(value) = joined.strip_prefix(MAILCONF_PREFIX) else {
+                    let Some(value) = joined.strip_prefix(b"mailconf=") else {
                         trace!("no `mailconf=` prefix in TXT record, skip");
                         continue;
                     };
 
-                    let Ok(url_str) = from_utf8(value) else {
+                    let Ok(url_str) = str::from_utf8(value) else {
                         trace!("`mailconf=` TXT value is not valid UTF-8, skip");
                         continue;
                     };

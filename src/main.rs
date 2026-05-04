@@ -1,5 +1,7 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 #[cfg(feature = "autoconfig")]
 use io_discovery::autoconfig::cli::AutoconfigCommand;
 #[cfg(feature = "pacc")]
@@ -14,36 +16,38 @@ use pimalaya_cli::{
     long_version,
     printer::{Printer, StdoutPrinter},
 };
+use pimalaya_stream::tls::{Rustls, RustlsCrypto, Tls, TlsProvider};
 
 fn main() {
-    let cli = DiscoveryCli::parse();
+    let cli = DiscoverCli::parse();
 
     Logger::init(&cli.log);
     let mut printer = StdoutPrinter::new(&cli.json);
+    let tls = cli.tls.into();
 
-    let result = cli.command.execute(&mut printer);
+    let result = cli.command.execute(&mut printer, &tls);
     ErrorReport::eval(&mut printer, result)
 }
 
 #[derive(Parser, Debug)]
 #[command(name = env!("CARGO_PKG_NAME"))]
-#[command(author, version, about)]
-#[command(long_version = long_version!())]
+#[command(about = "CLI to discover PIM-related services")]
+#[command(author, version, long_version = long_version!())]
 #[command(propagate_version = true, infer_subcommands = true)]
-struct DiscoveryCli {
+struct DiscoverCli {
     #[command(subcommand)]
-    pub command: DiscoveryCommand,
-
+    pub command: DiscoverCommand,
     #[command(flatten)]
-    pub json: JsonFlag,
+    pub tls: TlsFlags,
     #[command(flatten)]
     pub log: LogFlags,
+    #[command(flatten)]
+    pub json: JsonFlag,
 }
 
 #[derive(Subcommand, Debug)]
-enum DiscoveryCommand {
+enum DiscoverCommand {
     #[cfg(feature = "autoconfig")]
-    #[command(subcommand)]
     Autoconfig(AutoconfigCommand),
     #[cfg(feature = "pacc")]
     Pacc(PaccCommand),
@@ -51,15 +55,72 @@ enum DiscoveryCommand {
     Manuals(ManualCommand),
 }
 
-impl DiscoveryCommand {
-    pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
+impl DiscoverCommand {
+    pub fn execute(self, printer: &mut impl Printer, tls: &Tls) -> Result<()> {
         match self {
             #[cfg(feature = "autoconfig")]
-            Self::Autoconfig(cmd) => cmd.execute(printer),
+            Self::Autoconfig(cmd) => cmd.execute(printer, tls),
             #[cfg(feature = "pacc")]
-            Self::Pacc(cmd) => cmd.execute(printer),
-            Self::Completions(cmd) => cmd.execute(printer, DiscoveryCli::command()),
-            Self::Manuals(cmd) => cmd.execute(printer, DiscoveryCli::command()),
+            Self::Pacc(cmd) => cmd.execute(printer, tls),
+            Self::Completions(cmd) => cmd.execute(printer, DiscoverCli::command()),
+            Self::Manuals(cmd) => cmd.execute(printer, DiscoverCli::command()),
+        }
+    }
+}
+
+#[derive(Args, Debug)]
+struct TlsFlags {
+    /// TLS provider implementation used for HTTPS connections.
+    #[arg(long, global = true)]
+    #[arg(value_enum, value_name = "PROVIDER")]
+    pub tls: Option<TlsProviderArg>,
+    /// Additional TLS root certificate (PEM file).
+    #[arg(long, global = true, value_name = "PATH")]
+    pub tls_cert: Option<PathBuf>,
+    /// Rustls crypto provider.
+    #[arg(long, global = true)]
+    #[arg(value_enum, value_name = "PROVIDER")]
+    pub rustls_crypto: Option<RustlsCryptoArg>,
+}
+
+impl From<TlsFlags> for Tls {
+    fn from(flags: TlsFlags) -> Self {
+        Self {
+            provider: flags.tls.map(Into::into),
+            rustls: Rustls {
+                crypto: flags.rustls_crypto.map(Into::into),
+            },
+            cert: flags.tls_cert,
+        }
+    }
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+enum TlsProviderArg {
+    Rustls,
+    NativeTls,
+}
+
+impl From<TlsProviderArg> for TlsProvider {
+    fn from(arg: TlsProviderArg) -> Self {
+        match arg {
+            TlsProviderArg::Rustls => Self::Rustls,
+            TlsProviderArg::NativeTls => Self::NativeTls,
+        }
+    }
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+enum RustlsCryptoArg {
+    Aws,
+    Ring,
+}
+
+impl From<RustlsCryptoArg> for RustlsCrypto {
+    fn from(arg: RustlsCryptoArg) -> Self {
+        match arg {
+            RustlsCryptoArg::Aws => Self::Aws,
+            RustlsCryptoArg::Ring => Self::Ring,
         }
     }
 }

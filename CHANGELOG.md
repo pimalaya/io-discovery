@@ -9,16 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added support for RFC 1035: DNS protocol core.
+- Added Thunderbird Autoconfig support (requires `autoconfig` feature).
 
-- Added support for RFC 2782: SRV records.
+- Added [PACC] support (requires `pacc` feature).
 
-- Added support for RFC 3596: IPv6 address records (AAAA).
+  [PACC]: https://www.ietf.org/archive/id/draft-ietf-mailmaint-pacc-02.html
 
-- Added support for RFC 6698: DANE — DNS-Based Authentication of Named Entities.
-
-- Added support for RFC 6763: DNS-Based Service Discovery.
-
-- Added support for RFC 6891: EDNS0 — Extension Mechanisms for DNS.
+- Added CLI (requires `cli` feature).
 
 [unreleased]: https://github.com/pimalaya/io-discovery/compare/root..HEAD

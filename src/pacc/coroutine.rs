@@ -1,4 +1,4 @@
-//! # PACC discovery coroutine.
+//! # PACC discovery coroutine
 //!
 //! [`DiscoveryPacc`] performs the full PACC exchange defined by
 //! [draft-ietf-mailmaint-pacc-02] in three steps, in order:
@@ -18,13 +18,15 @@
 //! character-strings; the coroutine concatenates them (no separator,
 //! per RFC 6376 §3.6.2.2 / RFC 7208 §3.3) before parsing.
 //!
-//! The runtime opens the initial HTTPS stream itself (the URL is
-//! exposed via [`DiscoveryPacc::url`]). When the HTTP fetch is done,
-//! the coroutine yields a single [`WantsDnsConnect`] event so the
-//! runtime knows to drop the HTTPS stream and connect to a DNS
-//! resolver of its choice.
+//! Each yielded event is tagged with the transport it applies to:
+//! [`WantsHttpRead`] / [`WantsHttpWrite`] for the HTTPS exchange and
+//! [`WantsDnsRead`] / [`WantsDnsWrite`] for the DNS digest lookup. The
+//! runtime is expected to keep one stream per transport.
 //!
-//! [`WantsDnsConnect`]: DiscoveryPaccResult::WantsDnsConnect
+//! [`WantsHttpRead`]: DiscoveryPaccResult::WantsHttpRead
+//! [`WantsHttpWrite`]: DiscoveryPaccResult::WantsHttpWrite
+//! [`WantsDnsRead`]: DiscoveryPaccResult::WantsDnsRead
+//! [`WantsDnsWrite`]: DiscoveryPaccResult::WantsDnsWrite
 //! [draft-ietf-mailmaint-pacc-02]: https://datatracker.ietf.org/doc/html/draft-ietf-mailmaint-pacc-02
 
 use core::mem;
@@ -71,15 +73,14 @@ pub enum DiscoveryPaccResult {
     /// Discovery succeeded: the body matched the published digest and
     /// parses as a valid configuration document.
     Ok(PaccConfig),
-    /// The coroutine wants more bytes from the active stream.
-    WantsRead,
-    /// The coroutine wants the given bytes written to the active stream.
-    WantsWrite(Vec<u8>),
-    /// HTTP fetch is complete. The runtime should drop the HTTPS
-    /// stream, open a fresh TCP stream to a DNS resolver of its
-    /// choice, and use it as the active stream for the rest of the
-    /// run. Yielded exactly once per discovery.
-    WantsDnsConnect,
+    /// The coroutine wants more bytes from the HTTPS stream.
+    WantsHttpRead,
+    /// The coroutine wants the given bytes written to the HTTPS stream.
+    WantsHttpWrite(Vec<u8>),
+    /// The coroutine wants more bytes from the DNS stream.
+    WantsDnsRead,
+    /// The coroutine wants the given bytes written to the DNS stream.
+    WantsDnsWrite(Vec<u8>),
     /// Discovery failed.
     Err(DiscoveryPaccError),
 }
@@ -111,11 +112,9 @@ impl DiscoveryPacc {
     }
 
     /// Builds a discoverer for `domain`. The runtime should pair the
-    /// returned coroutine with an HTTPS stream opened on
-    /// [`DiscoveryPacc::url`]; on [`WantsDnsConnect`] the runtime
-    /// replaces it with a TCP stream to its DNS resolver.
-    ///
-    /// [`WantsDnsConnect`]: DiscoveryPaccResult::WantsDnsConnect
+    /// returned coroutine with two streams: an HTTPS connection to
+    /// [`DiscoveryPacc::url`] for the digest fetch and a TCP
+    /// connection to a DNS resolver for the digest verification.
     pub fn new(domain: impl AsRef<str>) -> Result<Self, DiscoveryPaccError> {
         let url = Self::url(domain.as_ref())?;
         let qname = format!("_ua-auto-config.{}", domain.as_ref().trim_matches('.'));
@@ -129,110 +128,110 @@ impl DiscoveryPacc {
     }
 
     /// Drives the discovery coroutine for one resume cycle.
-    pub fn resume(&mut self, arg: Option<&[u8]>) -> DiscoveryPaccResult {
-        match mem::take(&mut self.state) {
-            State::Get => match self.fetch.resume(arg) {
-                HttpGetResult::WantsRead => {
-                    self.state = State::Get;
-                    DiscoveryPaccResult::WantsRead
-                }
-                HttpGetResult::WantsWrite(bytes) => {
-                    self.state = State::Get;
-                    DiscoveryPaccResult::WantsWrite(bytes)
-                }
-                HttpGetResult::Ok(bytes) => {
-                    self.raw_body = bytes;
-                    self.state = State::Verify;
-                    DiscoveryPaccResult::WantsDnsConnect
-                }
-                HttpGetResult::Err(err) => DiscoveryPaccResult::Err(err.into()),
-            },
-            State::Verify => match self.verify.resume(arg) {
-                DiscoveryDnsTxtResult::WantsRead => {
-                    self.state = State::Verify;
-                    DiscoveryPaccResult::WantsRead
-                }
-                DiscoveryDnsTxtResult::WantsWrite(bytes) => {
-                    self.state = State::Verify;
-                    DiscoveryPaccResult::WantsWrite(bytes)
-                }
-                DiscoveryDnsTxtResult::Ok(records) => {
-                    for record in records {
-                        let mut config = Vec::new();
+    pub fn resume(&mut self, mut arg: Option<&[u8]>) -> DiscoveryPaccResult {
+        loop {
+            match mem::take(&mut self.state) {
+                State::Get => match self.fetch.resume(arg.take()) {
+                    HttpGetResult::WantsRead => {
+                        self.state = State::Get;
+                        return DiscoveryPaccResult::WantsHttpRead;
+                    }
+                    HttpGetResult::WantsWrite(bytes) => {
+                        self.state = State::Get;
+                        return DiscoveryPaccResult::WantsHttpWrite(bytes);
+                    }
+                    HttpGetResult::Ok(bytes) => {
+                        self.raw_body = bytes;
+                        self.state = State::Verify;
+                    }
+                    HttpGetResult::Err(err) => return DiscoveryPaccResult::Err(err.into()),
+                },
+                State::Verify => match self.verify.resume(arg.take()) {
+                    DiscoveryDnsTxtResult::WantsRead => {
+                        self.state = State::Verify;
+                        return DiscoveryPaccResult::WantsDnsRead;
+                    }
+                    DiscoveryDnsTxtResult::WantsWrite(bytes) => {
+                        self.state = State::Verify;
+                        return DiscoveryPaccResult::WantsDnsWrite(bytes);
+                    }
+                    DiscoveryDnsTxtResult::Ok(records) => {
+                        for record in records {
+                            let mut config = Vec::new();
 
-                        for data in record.rdata.iter() {
-                            config.extend_from_slice(&data.octets);
-                        }
+                            for data in record.rdata.iter() {
+                                config.extend_from_slice(&data.octets);
+                            }
 
-                        let Ok(config) = str::from_utf8(&config) else {
-                            trace!("invalid UTF-8 TXT record, skip");
-                            continue;
-                        };
-
-                        let mut v = None;
-                        let mut a = None;
-                        let mut d = None;
-
-                        for tag in config.split(';') {
-                            let Some((name, val)) = tag.split_once('=') else {
+                            let Ok(config) = str::from_utf8(&config) else {
+                                trace!("invalid UTF-8 TXT record, skip");
                                 continue;
                             };
 
-                            match name.trim() {
-                                n if n.eq_ignore_ascii_case("v") => v = Some(val.trim()),
-                                n if n.eq_ignore_ascii_case("a") => a = Some(val.trim()),
-                                n if n.eq_ignore_ascii_case("d") => d = Some(val.trim()),
-                                _ => continue,
+                            let mut v = None;
+                            let mut a = None;
+                            let mut d = None;
+
+                            for tag in config.split(';') {
+                                let Some((name, val)) = tag.split_once('=') else {
+                                    continue;
+                                };
+
+                                match name.trim() {
+                                    n if n.eq_ignore_ascii_case("v") => v = Some(val.trim()),
+                                    n if n.eq_ignore_ascii_case("a") => a = Some(val.trim()),
+                                    n if n.eq_ignore_ascii_case("d") => d = Some(val.trim()),
+                                    _ => continue,
+                                }
                             }
-                        }
 
-                        let (Some(v), Some(a), Some(d)) = (v, a, d) else {
-                            trace!("missing v, a or d in TXT record, skip");
-                            continue;
-                        };
+                            let (Some(v), Some(a), Some(d)) = (v, a, d) else {
+                                trace!("missing v, a or d in TXT record, skip");
+                                continue;
+                            };
 
-                        if !v.eq_ignore_ascii_case("UAAC1") {
-                            trace!("invalid `v`: expect `UAAC1` got `{v}`, skip");
-                            continue;
-                        }
-
-                        if !a.eq_ignore_ascii_case("sha256") {
-                            trace!("invalid `a`: expect `sha256` got `{a}`, skip");
-                            continue;
-                        }
-
-                        let expected_digest = match BASE64.decode(d) {
-                            Ok(digest) => {
-                                trace!("expected digest: {digest:x?}");
-                                digest
-                            }
-                            Err(err) => {
-                                trace!("invalid base64 digest `{d}`, skip: {err}");
+                            if !v.eq_ignore_ascii_case("UAAC1") {
+                                trace!("invalid `v`: expect `UAAC1` got `{v}`, skip");
                                 continue;
                             }
-                        };
 
-                        let actual_digest = Sha256::digest(&self.raw_body);
-                        trace!("actual digest: {actual_digest:x?}");
+                            if !a.eq_ignore_ascii_case("sha256") {
+                                trace!("invalid `a`: expect `sha256` got `{a}`, skip");
+                                continue;
+                            }
 
-                        if !bool::from(expected_digest.ct_eq(&actual_digest)) {
-                            trace!("digest mismatch, skip");
-                            continue;
+                            let expected_digest = match BASE64.decode(d) {
+                                Ok(digest) => {
+                                    trace!("expected digest: {digest:x?}");
+                                    digest
+                                }
+                                Err(err) => {
+                                    trace!("invalid base64 digest `{d}`, skip: {err}");
+                                    continue;
+                                }
+                            };
+
+                            let actual_digest = Sha256::digest(&self.raw_body);
+                            trace!("actual digest: {actual_digest:x?}");
+
+                            if !bool::from(expected_digest.ct_eq(&actual_digest)) {
+                                trace!("digest mismatch, skip");
+                                continue;
+                            }
+
+                            return match serde_json::from_slice(&self.raw_body) {
+                                Ok(config) => DiscoveryPaccResult::Ok(config),
+                                Err(err) => DiscoveryPaccResult::Err(DiscoveryPaccError::Json(err)),
+                            };
                         }
 
-                        return match serde_json::from_slice(&self.raw_body) {
-                            Ok(config) => DiscoveryPaccResult::Ok(config),
-                            Err(err) => DiscoveryPaccResult::Err(DiscoveryPaccError::Json(err)),
-                        };
+                        return DiscoveryPaccResult::Err(DiscoveryPaccError::NoValidTxtRecord);
                     }
-
-                    DiscoveryPaccResult::Err(DiscoveryPaccError::NoValidTxtRecord)
-                }
-                DiscoveryDnsTxtResult::Err(err) => DiscoveryPaccResult::Err(err.into()),
-            },
-
-            State::Done => {
-                panic!("DiscoveryPacc::resume called after completion");
+                    DiscoveryDnsTxtResult::Err(err) => {
+                        return DiscoveryPaccResult::Err(err.into());
+                    }
+                },
+                State::Done => panic!("DiscoveryPacc::resume called after completion"),
             }
         }
     }
