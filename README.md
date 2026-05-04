@@ -1,17 +1,18 @@
 # I/O Discovery [![Documentation](https://img.shields.io/docsrs/io-discovery?style=flat&logo=docs.rs&logoColor=white)](https://docs.rs/io-discovery/latest/io_discovery) [![Matrix](https://img.shields.io/badge/chat-%23pimalaya-blue?style=flat&logo=matrix&logoColor=white)](https://matrix.to/#/#pimalaya:matrix.org) [![Mastodon](https://img.shields.io/badge/news-%40pimalaya-blue?style=flat&logo=mastodon&logoColor=white)](https://fosstodon.org/@pimalaya)
 
-Client library and CLI to discover PIM-related services, written in Rust
+Client library and CLI to discover PIM-related services, written in Rust.
 
-This repository ships **three things in one**:
+This repository ships three things:
 
-- Low-level, **I/O-free** coroutines: pure state machines that emit read/write requests, runtime-agnostic, `no_std`-friendly;
-- Mid-level, standard blocking client library: thin runtime that drives each coroutine against a caller-provided `Read + Write` stream;
-- High-level, CLI binary `discover`: drives the full discovery chain, or any single step, against a real network.
+- Low-level **I/O-free** coroutines (no std state machines that emit read/write requests)
+- Mid-level clients, based on coroutines (standard, blocking)
+- High-level CLI, based on std clients
 
 ## Table of contents
 
 - [Features](#features)
 - [Installation](#installation)
+  - [Pre-built binary](#pre-built-binary)
   - [Cargo](#cargo)
   - [Nix](#nix)
   - [Sources](#sources)
@@ -43,6 +44,28 @@ This repository ships **three things in one**:
 *The `io-discovery` library and CLI are written in [Rust](https://www.rust-lang.org/), and rely on [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to enable or disable functionalities. Default features can be found in the `features` section of the [`Cargo.toml`](https://github.com/pimalaya/io-discovery/blob/master/Cargo.toml), or on [docs.rs](https://docs.rs/crate/io-discovery/latest/features).*
 
 ## Installation
+
+### Pre-built binary
+
+I/O Discovery CLI can be installed with the `install.sh` installer:
+
+*As root:*
+
+```ignore
+curl -sSL https://raw.githubusercontent.com/pimalaya/io-discovery/master/install.sh | sudo sh
+```
+
+*As a regular user:*
+
+```ignore
+curl -sSL https://raw.githubusercontent.com/pimalaya/io-discovery/master/install.sh | PREFIX=~/.local sh
+```
+
+These commands install the latest binary from the GitHub [releases](https://github.com/pimalaya/io-discovery/releases) section.
+
+If you want a more up-to-date version than the latest release, check out the [releases](https://github.com/pimalaya/io-discovery/actions/workflows/releases.yml) GitHub workflow and look for the *Artifacts* section. You will find a pre-built binary matching your OS. These pre-built binaries are built from the `master` branch.
+
+*Such binaries are built with the default cargo features. If you need more features, please use another installation method.*
 
 ### Cargo
 
