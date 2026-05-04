@@ -648,7 +648,6 @@ dependencies = [
  "base64",
  "clap",
  "domain",
- "env_logger",
  "io-http",
  "log",
  "pimalaya-cli",
