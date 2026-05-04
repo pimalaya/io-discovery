@@ -34,10 +34,6 @@ required-features = ["cli"]
 [build-dependencies]
 pimalaya-cli = { version = "0.0.1", default-features = false, features = ["build"], optional = true }
 
-[dev-dependencies]
-env_logger = "0.11"
-io-http = { version = "0.0.3", default-features = false }
-
 [dependencies]
 anyhow = { version = "1", default-features = false, optional = true }
 base64 = { version = "0.22", default-features = false, features = ["alloc"], optional = true }
