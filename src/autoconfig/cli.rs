@@ -17,7 +17,7 @@ use url::Url;
 
 use crate::{
     autoconfig::{
-        client::{self, DiscoveryAutoconfigClientStd},
+        client::{self, DiscoveryAutoconfigClient},
         coroutines::{dns_mx::mx_parent_domain, isp::DiscoveryIsp},
         types::Autoconfig,
     },
@@ -65,7 +65,7 @@ impl AutoconfigCommand {
 
         let mx_domain = {
             let stream = TcpStream::connect(&server)?;
-            DiscoveryAutoconfigClientStd::new(stream)
+            DiscoveryAutoconfigClient::new(stream)
                 .mx(&self.domain)?
                 .first()
                 .map(|r| r.rdata.exchange.to_string())
@@ -82,7 +82,7 @@ impl AutoconfigCommand {
 
         let mailconf_url = {
             let stream = TcpStream::connect(&server)?;
-            DiscoveryAutoconfigClientStd::new(stream)
+            DiscoveryAutoconfigClient::new(stream)
                 .mailconf(&self.domain)
                 .ok()
         };
@@ -99,7 +99,7 @@ impl AutoconfigCommand {
         for (i, service) in ["imap", "imaps", "submission"].iter().enumerate() {
             let qname = format!("_{service}._tcp.{}", self.domain);
             let stream = TcpStream::connect(&server)?;
-            bests[i] = DiscoveryAutoconfigClientStd::new(stream)
+            bests[i] = DiscoveryAutoconfigClient::new(stream)
                 .srv_query(&qname)?
                 .into_iter()
                 .next()
@@ -184,7 +184,7 @@ impl AutoconfigSubcommand {
 
             Self::Mx { domain, server } => {
                 let stream = TcpStream::connect(&server)?;
-                let records = DiscoveryAutoconfigClientStd::new(stream)
+                let records = DiscoveryAutoconfigClient::new(stream)
                     .mx(&domain)?
                     .into_iter()
                     .map(|record| DnsMxRecordOutput {
@@ -197,7 +197,7 @@ impl AutoconfigSubcommand {
 
             Self::Mailconf { domain, server } => {
                 let stream = TcpStream::connect(&server)?;
-                let url = DiscoveryAutoconfigClientStd::new(stream).mailconf(&domain)?;
+                let url = DiscoveryAutoconfigClient::new(stream).mailconf(&domain)?;
                 printer.out(MailconfOutput {
                     url: url.to_string(),
                 })
@@ -209,7 +209,7 @@ impl AutoconfigSubcommand {
                 for (i, service) in ["imap", "imaps", "submission"].iter().enumerate() {
                     let qname = format!("_{service}._tcp.{domain}");
                     let stream = TcpStream::connect(&server)?;
-                    bests[i] = DiscoveryAutoconfigClientStd::new(stream)
+                    bests[i] = DiscoveryAutoconfigClient::new(stream)
                         .srv_query(&qname)?
                         .into_iter()
                         .next()
@@ -225,7 +225,7 @@ impl AutoconfigSubcommand {
 
 fn fetch_isp(url: Url, tls: &Tls) -> Result<Autoconfig> {
     let http = HttpSession::new(&url, tls.clone())?;
-    let mut client = DiscoveryAutoconfigClientStd::new(http.stream);
+    let mut client = DiscoveryAutoconfigClient::new(http.stream);
     Ok(client.isp(url)?)
 }
 

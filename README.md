@@ -47,25 +47,9 @@ This repository ships three things:
 
 ### Pre-built binary
 
-I/O Discovery CLI can be installed with the `install.sh` installer:
+The CLI binary `discover` has not been officially released yet. The only way to get a pre-built binary is to check the [releases](https://github.com/pimalaya/io-discovery/actions/workflows/releases.yml) GitHub workflow and look for the *Artifacts* section. You will find a pre-built binary matching your OS. These pre-built binaries are built from the `master` branch.
 
-*As root:*
-
-```ignore
-curl -sSL https://raw.githubusercontent.com/pimalaya/io-discovery/master/install.sh | sudo sh
-```
-
-*As a regular user:*
-
-```ignore
-curl -sSL https://raw.githubusercontent.com/pimalaya/io-discovery/master/install.sh | PREFIX=~/.local sh
-```
-
-These commands install the latest binary from the GitHub [releases](https://github.com/pimalaya/io-discovery/releases) section.
-
-If you want a more up-to-date version than the latest release, check out the [releases](https://github.com/pimalaya/io-discovery/actions/workflows/releases.yml) GitHub workflow and look for the *Artifacts* section. You will find a pre-built binary matching your OS. These pre-built binaries are built from the `master` branch.
-
-*Such binaries are built with the default cargo features. If you need more features, please use another installation method.*
+*Such binaries are built with the default cargo features, plus `cli`. If you need more features, please use another installation method.*
 
 ### Cargo
 
@@ -155,7 +139,7 @@ Using a mid-level std PACC client:
 ```rust,ignore
 use std::{net::TcpStream, sync::Arc};
 
-use io_discovery::pacc::{client::DiscoveryPaccClientStd, coroutine::DiscoveryPacc};
+use io_discovery::pacc::{client::DiscoveryPaccClient, coroutine::DiscoveryPacc};
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls_platform_verifier::ConfigVerifierExt;
 
@@ -170,7 +154,7 @@ let https = StreamOwned::new(conn, http);
 let dns = TcpStream::connect("1.1.1.1:53").unwrap();
 
 // build a PACC discovery client
-let mut client = DiscoveryPaccClientStd::new(https, dns);
+let mut client = DiscoveryPaccClient::new(https, dns);
 
 // get verified PACC config
 let config = client.discover("fastmail.com").unwrap();

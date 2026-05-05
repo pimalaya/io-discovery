@@ -9,7 +9,7 @@
 
 use std::{env, net::TcpStream, sync::Arc};
 
-use io_discovery::pacc::{client::DiscoveryPaccClientStd, coroutine::DiscoveryPacc};
+use io_discovery::pacc::{client::DiscoveryPaccClient, coroutine::DiscoveryPacc};
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls_platform_verifier::ConfigVerifierExt;
 
@@ -31,7 +31,7 @@ fn main() {
 
     let dns = TcpStream::connect(&dns).unwrap();
 
-    let config = DiscoveryPaccClientStd::new(https, dns)
+    let config = DiscoveryPaccClient::new(https, dns)
         .discover(&domain)
         .unwrap();
 

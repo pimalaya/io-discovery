@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::pacc::{coroutine::*, types::PaccConfig};
 
-/// Errors returned by [`DiscoveryPaccClientStd::discover`].
+/// Errors returned by [`DiscoveryPaccClient::discover`].
 #[derive(Debug, Error)]
 pub enum DiscoveryPaccClientError {
     #[error(transparent)]
@@ -24,12 +24,12 @@ pub enum DiscoveryPaccClientError {
 /// Std-blocking client that wraps a [`DiscoveryPacc`] coroutine and
 /// the two streams it drives — an HTTPS stream for the digest fetch
 /// and a DNS stream for the digest verification.
-pub struct DiscoveryPaccClientStd<Http: Read + Write, Dns: Read + Write> {
+pub struct DiscoveryPaccClient<Http: Read + Write, Dns: Read + Write> {
     http_stream: Http,
     dns_stream: Dns,
 }
 
-impl<Http: Read + Write, Dns: Read + Write> DiscoveryPaccClientStd<Http, Dns> {
+impl<Http: Read + Write, Dns: Read + Write> DiscoveryPaccClient<Http, Dns> {
     /// Builds a client owning the given HTTPS and DNS streams.
     pub fn new(http_stream: Http, dns_stream: Dns) -> Self {
         Self {

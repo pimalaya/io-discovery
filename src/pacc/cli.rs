@@ -6,7 +6,7 @@ use pimalaya_cli::printer::Printer;
 use pimalaya_stream::{std::http::HttpSession, tls::Tls};
 
 use crate::{
-    pacc::{client::DiscoveryPaccClientStd, coroutine::DiscoveryPacc},
+    pacc::{client::DiscoveryPaccClient, coroutine::DiscoveryPacc},
     shared::defaults::DNS_SERVER,
 };
 
@@ -29,7 +29,7 @@ impl PaccCommand {
         let url = DiscoveryPacc::url(&self.domain)?;
         let http = HttpSession::new(&url, tls.clone())?.stream;
         let dns = TcpStream::connect(&self.dns_server)?;
-        let config = DiscoveryPaccClientStd::new(http, dns).discover(&self.domain)?;
+        let config = DiscoveryPaccClient::new(http, dns).discover(&self.domain)?;
         printer.out(config)
     }
 }

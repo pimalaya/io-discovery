@@ -7,10 +7,10 @@
 //! (HTTPS for [`isp`], TCP-to-DNS for [`mx`] / [`mailconf`] /
 //! [`srv_query`]).
 //!
-//! [`isp`]: DiscoveryAutoconfigClientStd::isp
-//! [`mx`]: DiscoveryAutoconfigClientStd::mx
-//! [`mailconf`]: DiscoveryAutoconfigClientStd::mailconf
-//! [`srv_query`]: DiscoveryAutoconfigClientStd::srv_query
+//! [`isp`]: DiscoveryAutoconfigClient::isp
+//! [`mx`]: DiscoveryAutoconfigClient::mx
+//! [`mailconf`]: DiscoveryAutoconfigClient::mailconf
+//! [`srv_query`]: DiscoveryAutoconfigClient::srv_query
 
 use std::{
     borrow::ToOwned,
@@ -37,7 +37,7 @@ use crate::{
     shared::dns_txt::*,
 };
 
-/// Errors returned by [`DiscoveryAutoconfigClientStd`].
+/// Errors returned by [`DiscoveryAutoconfigClient`].
 #[derive(Debug, Error)]
 pub enum DiscoveryAutoconfigClientError {
     #[error(transparent)]
@@ -60,11 +60,11 @@ pub enum DiscoveryAutoconfigClientError {
 
 /// Std-blocking client wrapping one [`Read`]/[`Write`] stream that
 /// the runtime drives against the autoconfig coroutines.
-pub struct DiscoveryAutoconfigClientStd<S: Read + Write> {
+pub struct DiscoveryAutoconfigClient<S: Read + Write> {
     stream: S,
 }
 
-impl<S: Read + Write> DiscoveryAutoconfigClientStd<S> {
+impl<S: Read + Write> DiscoveryAutoconfigClient<S> {
     /// Builds a client owning the given stream.
     pub fn new(stream: S) -> Self {
         Self { stream }
