@@ -5,11 +5,9 @@
 //! (best first, per RFC 5321 §5.1).
 //!
 //! TCP framing (RFC 1035 §4.2.2: 2-byte big-endian length prefix) is
-//! handled inside the coroutine, so [`WantsRead`] / [`WantsWrite`]
-//! look exactly like an HTTP exchange.
-//!
-//! [`WantsRead`]: DiscoveryDnsMxResult::WantsRead
-//! [`WantsWrite`]: DiscoveryDnsMxResult::WantsWrite
+//! handled inside the coroutine. Each yielded `WantsRead` /
+//! `WantsWrite` carries the `resolver` URL so the runtime can route
+//! bytes to the correct DNS-over-TCP stream.
 
 use core::mem;
 
@@ -29,6 +27,7 @@ use domain::new::{
     rdata::{Mx, RecordData},
 };
 use thiserror::Error;
+use url::Url;
 
 const QUERY_BUF_SIZE: usize = 4 * 1024;
 
@@ -48,10 +47,11 @@ pub enum DiscoveryDnsMxResult {
     /// MX answer records sorted by ascending preference (best first);
     /// empty when the response carries no MX answers.
     Ok(Vec<Record<RevNameBuf, Mx<NameBuf>>>),
-    /// The coroutine wants more bytes from the socket.
-    WantsRead,
-    /// The coroutine wants the given bytes written to the socket.
-    WantsWrite(Vec<u8>),
+    /// The coroutine wants more bytes from the stream open on `url`.
+    WantsRead { url: Url },
+    /// The coroutine wants the given bytes written to the stream open
+    /// on `url`.
+    WantsWrite { url: Url, bytes: Vec<u8> },
     /// The coroutine failed.
     Err(DiscoveryDnsMxError),
 }
@@ -74,6 +74,7 @@ enum State {
 #[derive(Debug)]
 pub struct DiscoveryDnsMx {
     domain: String,
+    resolver: Url,
     state: State,
     wants_read: bool,
     wants_write: Option<Vec<u8>>,
@@ -82,12 +83,14 @@ pub struct DiscoveryDnsMx {
 
 impl DiscoveryDnsMx {
     /// Returns a coroutine ready to build and emit a DNS MX query for
-    /// `domain` on the first [`resume`].
+    /// `domain` on the first [`resume`]. `resolver` must be a
+    /// `tcp://host:port` URL pointing at a DNS-over-TCP resolver.
     ///
     /// [`resume`]: DiscoveryDnsMx::resume
-    pub fn new(domain: impl ToString) -> Self {
+    pub fn new(domain: impl ToString, resolver: Url) -> Self {
         Self {
             domain: domain.to_string(),
+            resolver,
             state: State::BuildQuery,
             wants_read: false,
             wants_write: None,
@@ -99,11 +102,16 @@ impl DiscoveryDnsMx {
     pub fn resume(&mut self, mut arg: Option<&[u8]>) -> DiscoveryDnsMxResult {
         loop {
             if let Some(bytes) = self.wants_write.take() {
-                return DiscoveryDnsMxResult::WantsWrite(bytes);
+                return DiscoveryDnsMxResult::WantsWrite {
+                    url: self.resolver.clone(),
+                    bytes,
+                };
             }
 
             if mem::take(&mut self.wants_read) {
-                return DiscoveryDnsMxResult::WantsRead;
+                return DiscoveryDnsMxResult::WantsRead {
+                    url: self.resolver.clone(),
+                };
             }
 
             match mem::take(&mut self.state) {

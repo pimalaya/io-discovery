@@ -41,10 +41,11 @@ pub enum DiscoveryIspError {
 pub enum DiscoveryIspResult {
     /// The fetch successfully decoded an autoconfig.
     Ok(Autoconfig),
-    /// The fetch wants more bytes to be read from the socket.
-    WantsRead,
-    /// The fetch wants the given bytes to be written to the socket.
-    WantsWrite(Vec<u8>),
+    /// The fetch wants more bytes from the stream open on `url`.
+    WantsRead { url: Url },
+    /// The fetch wants the given bytes written to the stream open on
+    /// `url`.
+    WantsWrite { url: Url, bytes: Vec<u8> },
     /// The fetch failed; the runtime should drop this URL and try the
     /// next one.
     Err(DiscoveryIspError),
@@ -53,6 +54,7 @@ pub enum DiscoveryIspResult {
 /// HTTP+XML fetch coroutine for a single ISP autoconfig URL.
 pub struct DiscoveryIsp {
     get: HttpGet,
+    url: Url,
 }
 
 impl DiscoveryIsp {
@@ -108,11 +110,13 @@ impl DiscoveryIsp {
         ])
     }
 
-    /// Builds a fetcher for `url`. Pair with an HTTP session opened on
-    /// the same URL.
+    /// Builds a fetcher for `url`. The URL is yielded back on every
+    /// `WantsRead` / `WantsWrite` so the runtime can route the bytes
+    /// to the correct stream.
     pub fn new(url: Url) -> Self {
         Self {
-            get: HttpGet::new(url),
+            get: HttpGet::new(url.clone()),
+            url,
         }
     }
 
@@ -131,8 +135,13 @@ impl DiscoveryIsp {
                 }
             }
 
-            HttpGetResult::WantsRead => DiscoveryIspResult::WantsRead,
-            HttpGetResult::WantsWrite(bytes) => DiscoveryIspResult::WantsWrite(bytes),
+            HttpGetResult::WantsRead => DiscoveryIspResult::WantsRead {
+                url: self.url.clone(),
+            },
+            HttpGetResult::WantsWrite(bytes) => DiscoveryIspResult::WantsWrite {
+                url: self.url.clone(),
+                bytes,
+            },
             HttpGetResult::Err(err) => DiscoveryIspResult::Err(err.into()),
         }
     }

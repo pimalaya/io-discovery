@@ -1,6 +1,5 @@
 use std::{
     fmt,
-    net::TcpStream,
     string::{String, ToString},
     vec::Vec,
 };
@@ -12,12 +11,12 @@ use pimalaya_cli::{
     printer::Printer,
     table::{Cell, ContentArrangement, Table, presets::UTF8_FULL},
 };
-use pimalaya_stream::{std::http::HttpSession, tls::Tls};
+use pimalaya_stream::tls::Tls;
 use url::Url;
 
 use crate::{
     autoconfig::{
-        client::{self, DiscoveryAutoconfigClient},
+        client::DiscoveryAutoconfigClient,
         coroutines::{dns_mx::mx_parent_domain, isp::DiscoveryIsp},
         types::Autoconfig,
     },
@@ -57,39 +56,30 @@ impl AutoconfigCommand {
             return sub.execute(printer, tls);
         }
 
-        let server = self.server;
+        let resolver = parse_resolver(&self.server)?;
+        let mut client = DiscoveryAutoconfigClient::new(resolver).with_tls(tls.clone());
 
-        if let Some(ac) = try_all_isps(&self.local_part, &self.domain, tls) {
+        if let Some(ac) = try_all_isps(&mut client, &self.local_part, &self.domain) {
             return printer.out(ac);
         }
 
-        let mx_domain = {
-            let stream = TcpStream::connect(&server)?;
-            DiscoveryAutoconfigClient::new(stream)
-                .mx(&self.domain)?
-                .first()
-                .map(|r| r.rdata.exchange.to_string())
-                .and_then(|target| mx_parent_domain(&target))
-                .filter(|d| d != &self.domain)
-        };
+        let mx_domain = client
+            .mx(&self.domain)?
+            .first()
+            .map(|r| r.rdata.exchange.to_string())
+            .and_then(|target| mx_parent_domain(&target))
+            .filter(|d| d != &self.domain);
 
         if let Some(mx_domain) = mx_domain {
             trace!("re-trying ISPs against MX parent {mx_domain}");
-            if let Some(ac) = try_all_isps(&self.local_part, &mx_domain, tls) {
+            if let Some(ac) = try_all_isps(&mut client, &self.local_part, &mx_domain) {
                 return printer.out(ac);
             }
         }
 
-        let mailconf_url = {
-            let stream = TcpStream::connect(&server)?;
-            DiscoveryAutoconfigClient::new(stream)
-                .mailconf(&self.domain)
-                .ok()
-        };
-
-        if let Some(url) = mailconf_url {
+        if let Ok(url) = client.mailconf(&self.domain) {
             trace!("fetching mailconf URL {url}");
-            if let Some(ac) = try_isp(url, tls) {
+            if let Some(ac) = try_isp(&mut client, url) {
                 return printer.out(ac);
             }
         }
@@ -98,8 +88,7 @@ impl AutoconfigCommand {
 
         for (i, service) in ["imap", "imaps", "submission"].iter().enumerate() {
             let qname = format!("_{service}._tcp.{}", self.domain);
-            let stream = TcpStream::connect(&server)?;
-            bests[i] = DiscoveryAutoconfigClient::new(stream)
+            bests[i] = client
                 .srv_query(&qname)?
                 .into_iter()
                 .next()
@@ -107,7 +96,7 @@ impl AutoconfigCommand {
         }
 
         let [imap, imaps, submission] = bests;
-        printer.out(client::assemble_srv(&self.domain, imap, imaps, submission)?)
+        printer.out(client.assemble_srv(&self.domain, imap, imaps, submission)?)
     }
 }
 
@@ -183,8 +172,9 @@ impl AutoconfigSubcommand {
             }
 
             Self::Mx { domain, server } => {
-                let stream = TcpStream::connect(&server)?;
-                let records = DiscoveryAutoconfigClient::new(stream)
+                let resolver = parse_resolver(&server)?;
+                let records = DiscoveryAutoconfigClient::new(resolver)
+                    .with_tls(tls.clone())
                     .mx(&domain)?
                     .into_iter()
                     .map(|record| DnsMxRecordOutput {
@@ -196,20 +186,23 @@ impl AutoconfigSubcommand {
             }
 
             Self::Mailconf { domain, server } => {
-                let stream = TcpStream::connect(&server)?;
-                let url = DiscoveryAutoconfigClient::new(stream).mailconf(&domain)?;
+                let resolver = parse_resolver(&server)?;
+                let url = DiscoveryAutoconfigClient::new(resolver)
+                    .with_tls(tls.clone())
+                    .mailconf(&domain)?;
                 printer.out(MailconfOutput {
                     url: url.to_string(),
                 })
             }
 
             Self::Srv { domain, server } => {
+                let resolver = parse_resolver(&server)?;
+                let mut client = DiscoveryAutoconfigClient::new(resolver).with_tls(tls.clone());
                 let mut bests = [None, None, None];
 
                 for (i, service) in ["imap", "imaps", "submission"].iter().enumerate() {
                     let qname = format!("_{service}._tcp.{domain}");
-                    let stream = TcpStream::connect(&server)?;
-                    bests[i] = DiscoveryAutoconfigClient::new(stream)
+                    bests[i] = client
                         .srv_query(&qname)?
                         .into_iter()
                         .next()
@@ -217,22 +210,28 @@ impl AutoconfigSubcommand {
                 }
 
                 let [imap, imaps, submission] = bests;
-                printer.out(client::assemble_srv(&domain, imap, imaps, submission)?)
+                printer.out(client.assemble_srv(&domain, imap, imaps, submission)?)
             }
         }
     }
 }
 
+fn parse_resolver(server: &str) -> Result<Url> {
+    Ok(Url::parse(&format!("tcp://{server}"))?)
+}
+
 fn fetch_isp(url: Url, tls: &Tls) -> Result<Autoconfig> {
-    let http = HttpSession::new(&url, tls.clone())?;
-    let mut client = DiscoveryAutoconfigClient::new(http.stream);
+    // The resolver URL is unused on the ISP path (HTTPS only) but
+    // the client still needs one to construct.
+    let resolver = parse_resolver(DNS_SERVER)?;
+    let mut client = DiscoveryAutoconfigClient::new(resolver).with_tls(tls.clone());
     Ok(client.isp(url)?)
 }
 
-fn try_isp(url: Url, tls: &Tls) -> Option<Autoconfig> {
+fn try_isp(client: &mut DiscoveryAutoconfigClient, url: Url) -> Option<Autoconfig> {
     trace!("trying autoconfig at {url}");
 
-    match fetch_isp(url.clone(), tls) {
+    match client.isp(url.clone()) {
         Ok(ac) => Some(ac),
         Err(err) => {
             trace!("autoconfig at {url} failed: {err}");
@@ -241,9 +240,13 @@ fn try_isp(url: Url, tls: &Tls) -> Option<Autoconfig> {
     }
 }
 
-fn try_all_isps(local_part: &str, domain: &str, tls: &Tls) -> Option<Autoconfig> {
+fn try_all_isps(
+    client: &mut DiscoveryAutoconfigClient,
+    local_part: &str,
+    domain: &str,
+) -> Option<Autoconfig> {
     for url in DiscoveryIsp::all_urls(local_part, domain).ok()? {
-        if let Some(ac) = try_isp(url, tls) {
+        if let Some(ac) = try_isp(client, url) {
             return Some(ac);
         }
     }

@@ -1,14 +1,12 @@
-use std::{net::TcpStream, string::String};
+use std::string::String;
 
 use anyhow::Result;
 use clap::Args;
 use pimalaya_cli::printer::Printer;
-use pimalaya_stream::{std::http::HttpSession, tls::Tls};
+use pimalaya_stream::tls::Tls;
+use url::Url;
 
-use crate::{
-    pacc::{client::DiscoveryPaccClient, coroutine::DiscoveryPacc},
-    shared::defaults::DNS_SERVER,
-};
+use crate::{pacc::client::DiscoveryPaccClient, shared::defaults::DNS_SERVER};
 
 /// PACC discovery (draft-ietf-mailmaint-pacc-02).
 ///
@@ -26,10 +24,9 @@ pub struct PaccCommand {
 
 impl PaccCommand {
     pub fn execute(self, printer: &mut impl Printer, tls: &Tls) -> Result<()> {
-        let url = DiscoveryPacc::url(&self.domain)?;
-        let http = HttpSession::new(&url, tls.clone())?.stream;
-        let dns = TcpStream::connect(&self.dns_server)?;
-        let config = DiscoveryPaccClient::new(http, dns).discover(&self.domain)?;
+        let resolver = Url::parse(&format!("tcp://{}", self.dns_server))?;
+        let mut client = DiscoveryPaccClient::new(resolver).with_tls(tls.clone());
+        let config = client.discover(&self.domain)?;
         printer.out(config)
     }
 }

@@ -1058,7 +1058,7 @@ dependencies = [
 [[package]]
 name = "pimalaya-stream"
 version = "0.0.1"
-source = "git+https://github.com/pimalaya/stream#2241439fdbee28b1e7b046595eb07d20348b42da"
+source = "git+https://github.com/pimalaya/stream#4bba3a6f5d7b6e5650ab9850618beca652a9906d"
 dependencies = [
  "anyhow",
  "log",

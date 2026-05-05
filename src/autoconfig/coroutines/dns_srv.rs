@@ -6,11 +6,9 @@
 //! name (RFC 2782 §3, "service not available") are dropped.
 //!
 //! TCP framing (RFC 1035 §4.2.2: 2-byte big-endian length prefix) is
-//! handled inside the coroutine, so [`WantsRead`] /
-//! [`WantsWrite`] look exactly like an HTTP exchange.
-//!
-//! [`WantsRead`]: DiscoveryDnsSrvResult::WantsRead
-//! [`WantsWrite`]: DiscoveryDnsSrvResult::WantsWrite
+//! handled inside the coroutine. Each yielded `WantsRead` /
+//! `WantsWrite` carries the `resolver` URL so the runtime can route
+//! bytes to the correct DNS-over-TCP stream.
 
 use core::mem;
 
@@ -30,6 +28,7 @@ use domain::new::{
     rdata::{RecordData, Srv},
 };
 use thiserror::Error;
+use url::Url;
 
 const QUERY_BUF_SIZE: usize = 4 * 1024;
 
@@ -54,10 +53,11 @@ pub enum DiscoveryDnsSrvResult {
     /// by weight (RFC 2782); empty when the response carries no usable
     /// SRV answers.
     Ok(Vec<Record<RevNameBuf, Srv<NameBuf>>>),
-    /// The coroutine wants more bytes from the socket.
-    WantsRead,
-    /// The coroutine wants the given bytes written to the socket.
-    WantsWrite(Vec<u8>),
+    /// The coroutine wants more bytes from the stream open on `url`.
+    WantsRead { url: Url },
+    /// The coroutine wants the given bytes written to the stream open
+    /// on `url`.
+    WantsWrite { url: Url, bytes: Vec<u8> },
     /// The coroutine failed.
     Err(DiscoveryDnsSrvError),
 }
@@ -80,6 +80,7 @@ enum State {
 #[derive(Debug)]
 pub struct DiscoveryDnsSrv {
     qname: String,
+    resolver: Url,
     state: State,
     wants_read: bool,
     wants_write: Option<Vec<u8>>,
@@ -89,12 +90,14 @@ pub struct DiscoveryDnsSrv {
 impl DiscoveryDnsSrv {
     /// Returns a coroutine ready to build and emit a DNS SRV query
     /// for the fully-formed `qname` (e.g. `_imap._tcp.example.org`)
-    /// on the first [`resume`].
+    /// on the first [`resume`]. `resolver` must be a
+    /// `tcp://host:port` URL pointing at a DNS-over-TCP resolver.
     ///
     /// [`resume`]: DiscoveryDnsSrv::resume
-    pub fn new(qname: impl ToString) -> Self {
+    pub fn new(qname: impl ToString, resolver: Url) -> Self {
         Self {
             qname: qname.to_string(),
+            resolver,
             state: State::BuildQuery,
             wants_read: false,
             wants_write: None,
@@ -106,11 +109,16 @@ impl DiscoveryDnsSrv {
     pub fn resume(&mut self, mut arg: Option<&[u8]>) -> DiscoveryDnsSrvResult {
         loop {
             if let Some(bytes) = self.wants_write.take() {
-                return DiscoveryDnsSrvResult::WantsWrite(bytes);
+                return DiscoveryDnsSrvResult::WantsWrite {
+                    url: self.resolver.clone(),
+                    bytes,
+                };
             }
 
             if mem::take(&mut self.wants_read) {
-                return DiscoveryDnsSrvResult::WantsRead;
+                return DiscoveryDnsSrvResult::WantsRead {
+                    url: self.resolver.clone(),
+                };
             }
 
             match mem::take(&mut self.state) {

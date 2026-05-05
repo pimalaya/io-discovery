@@ -18,15 +18,12 @@
 //! character-strings; the coroutine concatenates them (no separator,
 //! per RFC 6376 §3.6.2.2 / RFC 7208 §3.3) before parsing.
 //!
-//! Each yielded event is tagged with the transport it applies to:
-//! [`WantsHttpRead`] / [`WantsHttpWrite`] for the HTTPS exchange and
-//! [`WantsDnsRead`] / [`WantsDnsWrite`] for the DNS digest lookup. The
-//! runtime is expected to keep one stream per transport.
+//! Each yielded event carries the [`Url`] of the endpoint the
+//! coroutine wants to talk to: the well-known PACC URL for the HTTPS
+//! fetch and a `tcp://host:port` resolver URL for the DNS digest
+//! lookup. The runtime is expected to maintain one stream per
+//! `(scheme, host, port)`.
 //!
-//! [`WantsHttpRead`]: DiscoveryPaccResult::WantsHttpRead
-//! [`WantsHttpWrite`]: DiscoveryPaccResult::WantsHttpWrite
-//! [`WantsDnsRead`]: DiscoveryPaccResult::WantsDnsRead
-//! [`WantsDnsWrite`]: DiscoveryPaccResult::WantsDnsWrite
 //! [draft-ietf-mailmaint-pacc-02]: https://datatracker.ietf.org/doc/html/draft-ietf-mailmaint-pacc-02
 
 use core::mem;
@@ -73,14 +70,11 @@ pub enum DiscoveryPaccResult {
     /// Discovery succeeded: the body matched the published digest and
     /// parses as a valid configuration document.
     Ok(PaccConfig),
-    /// The coroutine wants more bytes from the HTTPS stream.
-    WantsHttpRead,
-    /// The coroutine wants the given bytes written to the HTTPS stream.
-    WantsHttpWrite(Vec<u8>),
-    /// The coroutine wants more bytes from the DNS stream.
-    WantsDnsRead,
-    /// The coroutine wants the given bytes written to the DNS stream.
-    WantsDnsWrite(Vec<u8>),
+    /// The coroutine wants more bytes from the stream open on `url`.
+    WantsRead { url: Url },
+    /// The coroutine wants the given bytes written to the stream open
+    /// on `url`.
+    WantsWrite { url: Url, bytes: Vec<u8> },
     /// Discovery failed.
     Err(DiscoveryPaccError),
 }
@@ -100,6 +94,8 @@ pub struct DiscoveryPacc {
     fetch: HttpGet,
     verify: DiscoveryDnsTxt,
     raw_body: Vec<u8>,
+    http_url: Url,
+    resolver_url: Url,
 }
 
 impl DiscoveryPacc {
@@ -111,19 +107,21 @@ impl DiscoveryPacc {
         Url::parse(&url).map_err(|err| DiscoveryPaccError::InvalidUrl(err, d.to_string()))
     }
 
-    /// Builds a discoverer for `domain`. The runtime should pair the
-    /// returned coroutine with two streams: an HTTPS connection to
-    /// [`DiscoveryPacc::url`] for the digest fetch and a TCP
-    /// connection to a DNS resolver for the digest verification.
-    pub fn new(domain: impl AsRef<str>) -> Result<Self, DiscoveryPaccError> {
+    /// Builds a discoverer for `domain`. The `resolver` URL must use
+    /// a `tcp://host:port` form and is yielded back on every DNS
+    /// `WantsRead` / `WantsWrite` so the runtime can route the bytes
+    /// to the correct stream.
+    pub fn new(domain: impl AsRef<str>, resolver: Url) -> Result<Self, DiscoveryPaccError> {
         let url = Self::url(domain.as_ref())?;
         let qname = format!("_ua-auto-config.{}", domain.as_ref().trim_matches('.'));
 
         Ok(Self {
             state: State::Get,
-            fetch: HttpGet::new(url),
+            fetch: HttpGet::new(url.clone()),
             verify: DiscoveryDnsTxt::new(qname),
             raw_body: Vec::new(),
+            http_url: url,
+            resolver_url: resolver,
         })
     }
 
@@ -134,11 +132,16 @@ impl DiscoveryPacc {
                 State::Get => match self.fetch.resume(arg.take()) {
                     HttpGetResult::WantsRead => {
                         self.state = State::Get;
-                        return DiscoveryPaccResult::WantsHttpRead;
+                        return DiscoveryPaccResult::WantsRead {
+                            url: self.http_url.clone(),
+                        };
                     }
                     HttpGetResult::WantsWrite(bytes) => {
                         self.state = State::Get;
-                        return DiscoveryPaccResult::WantsHttpWrite(bytes);
+                        return DiscoveryPaccResult::WantsWrite {
+                            url: self.http_url.clone(),
+                            bytes,
+                        };
                     }
                     HttpGetResult::Ok(bytes) => {
                         self.raw_body = bytes;
@@ -149,11 +152,16 @@ impl DiscoveryPacc {
                 State::Verify => match self.verify.resume(arg.take()) {
                     DiscoveryDnsTxtResult::WantsRead => {
                         self.state = State::Verify;
-                        return DiscoveryPaccResult::WantsDnsRead;
+                        return DiscoveryPaccResult::WantsRead {
+                            url: self.resolver_url.clone(),
+                        };
                     }
                     DiscoveryDnsTxtResult::WantsWrite(bytes) => {
                         self.state = State::Verify;
-                        return DiscoveryPaccResult::WantsDnsWrite(bytes);
+                        return DiscoveryPaccResult::WantsWrite {
+                            url: self.resolver_url.clone(),
+                            bytes,
+                        };
                     }
                     DiscoveryDnsTxtResult::Ok(records) => {
                         for record in records {

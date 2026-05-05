@@ -41,10 +41,11 @@ pub enum DiscoveryMailconfResult {
     /// Discovery succeeded: a TXT record carried a valid `mailconf=`
     /// URL.
     Ok(Url),
-    /// The coroutine wants more bytes from the active stream.
-    WantsRead,
-    /// The coroutine wants the given bytes written to the active stream.
-    WantsWrite(Vec<u8>),
+    /// The coroutine wants more bytes from the stream open on `url`.
+    WantsRead { url: Url },
+    /// The coroutine wants the given bytes written to the stream open
+    /// on `url`.
+    WantsWrite { url: Url, bytes: Vec<u8> },
     /// Discovery failed.
     Err(DiscoveryMailconfError),
 }
@@ -53,24 +54,32 @@ pub enum DiscoveryMailconfResult {
 /// first valid `mailconf=<URL>` value.
 pub struct DiscoveryMailconf {
     txt: DiscoveryDnsTxt,
+    resolver: Url,
 }
 
 impl DiscoveryMailconf {
     /// Returns a coroutine ready to query `domain` for TXT records on
-    /// the first [`resume`].
+    /// the first [`resume`]. `resolver` must be a `tcp://host:port`
+    /// URL pointing at a DNS-over-TCP resolver.
     ///
     /// [`resume`]: DiscoveryMailconf::resume
-    pub fn new(domain: impl ToString) -> Self {
+    pub fn new(domain: impl ToString, resolver: Url) -> Self {
         Self {
             txt: DiscoveryDnsTxt::new(domain),
+            resolver,
         }
     }
 
     /// Drives the discovery coroutine for one resume cycle.
     pub fn resume(&mut self, arg: Option<&[u8]>) -> DiscoveryMailconfResult {
         match self.txt.resume(arg) {
-            DiscoveryDnsTxtResult::WantsRead => DiscoveryMailconfResult::WantsRead,
-            DiscoveryDnsTxtResult::WantsWrite(bytes) => DiscoveryMailconfResult::WantsWrite(bytes),
+            DiscoveryDnsTxtResult::WantsRead => DiscoveryMailconfResult::WantsRead {
+                url: self.resolver.clone(),
+            },
+            DiscoveryDnsTxtResult::WantsWrite(bytes) => DiscoveryMailconfResult::WantsWrite {
+                url: self.resolver.clone(),
+                bytes,
+            },
             DiscoveryDnsTxtResult::Err(err) => DiscoveryMailconfResult::Err(err.into()),
             DiscoveryDnsTxtResult::Ok(records) => {
                 for record in records {
