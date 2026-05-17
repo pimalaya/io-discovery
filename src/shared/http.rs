@@ -1,8 +1,8 @@
-//! # Shared HTTP GET coroutine
+//! # Shared HTTP module
 //!
 //! [`HttpGet`] sends one HTTP/1.1 GET on a fully-qualified [`Url`]
 //! and returns the raw response body bytes. It rejects redirects and
-//! non-success status codes — both autoconfig and PACC need the
+//! non-success status codes: both autoconfig and PACC need the
 //! response that came from the original origin.
 //!
 //! Body deserialization is the caller's responsibility: autoconfig

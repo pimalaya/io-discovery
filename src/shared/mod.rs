@@ -1,16 +1,18 @@
-//! # Shared coroutines and defaults
+//! # Shared coroutines and runtime helpers
 //!
 //! Building blocks reused across the
 //! [`autoconfig`](crate::autoconfig) and [`pacc`](crate::pacc)
 //! discovery flows.
 //!
-//! - [`http_get`] — single HTTP/1.1 GET that yields the raw response
-//!   body.
-//! - [`dns_txt`] — single DNS TXT exchange over TCP that yields the
+//! - [`http`]: single HTTP/1.1 GET that yields the raw response
+//!   body; also exposes the `http`/`https` factory bootstrap for the
+//!   pool (gated by the `stream` feature).
+//! - [`dns`]: single DNS TXT exchange over TCP that yields the
 //!   answer records in resolver order.
-//! - [`defaults`] — buffer sizes and CLI defaults shared by the rest
-//!   of the crate.
+//! - [`pool`]: std-blocking, URL-keyed cache of streams driven by
+//!   user-supplied scheme factories (gated by the `client` feature).
 
-pub mod defaults;
-pub mod dns_txt;
-pub mod http_get;
+pub mod dns;
+pub mod http;
+#[cfg(feature = "client")]
+pub mod pool;

@@ -1,4 +1,4 @@
-//! # DNS TXT query coroutine
+//! # Shared DNS module
 //!
 //! [`DiscoveryDnsTxt`] sends one DNS TXT question over TCP and parses
 //! the response into TXT answer records in the order the resolver
@@ -34,7 +34,15 @@ use domain::{
 };
 use thiserror::Error;
 
-use crate::shared::defaults::DNS_QUERY_BUF_SIZE;
+/// Default DNS resolver (`host:port`) used by every CLI subcommand
+/// when `--server` is not given.
+#[cfg(feature = "cli")]
+pub(crate) const DNS_SERVER: &str = "1.1.1.1:53";
+
+/// Maximum query buffer (in bytes) every DNS coroutine reserves for
+/// building the outgoing message, including the 2-byte TCP length
+/// prefix (RFC 1035 §4.2.2).
+pub(crate) const DNS_QUERY_BUF_SIZE: usize = 4 * 1024;
 
 /// Errors that can occur during a single DNS TXT exchange.
 #[derive(Debug, Error)]

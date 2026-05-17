@@ -6,7 +6,7 @@ use pimalaya_cli::printer::Printer;
 use pimalaya_stream::tls::Tls;
 use url::Url;
 
-use crate::{pacc::client::DiscoveryPaccClient, shared::defaults::DNS_SERVER};
+use crate::{pacc::client::DiscoveryPaccClientStd, shared::dns::DNS_SERVER};
 
 /// PACC discovery (draft-ietf-mailmaint-pacc-02).
 ///
@@ -25,7 +25,7 @@ pub struct PaccCommand {
 impl PaccCommand {
     pub fn execute(self, printer: &mut impl Printer, tls: &Tls) -> Result<()> {
         let resolver = Url::parse(&format!("tcp://{}", self.dns_server))?;
-        let mut client = DiscoveryPaccClient::new(resolver).with_tls(tls.clone());
+        let mut client = DiscoveryPaccClientStd::new(resolver).with_tls(tls.clone());
         let config = client.discover(&self.domain)?;
         printer.out(config)
     }

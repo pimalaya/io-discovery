@@ -6,6 +6,8 @@ use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use io_discovery::autoconfig::cli::AutoconfigCommand;
 #[cfg(feature = "pacc")]
 use io_discovery::pacc::cli::PaccCommand;
+#[cfg(feature = "rfc6186")]
+use io_discovery::rfc6186::cli::SrvCommand;
 use pimalaya_cli::{
     clap::{
         args::{JsonFlag, LogFlags},
@@ -21,7 +23,7 @@ use pimalaya_stream::tls::{Rustls, RustlsCrypto, Tls, TlsProvider};
 fn main() {
     let cli = DiscoverCli::parse();
 
-    Logger::init(&cli.log);
+    Logger::try_init(&cli.log).expect("init logger");
     let mut printer = StdoutPrinter::new(&cli.json);
     let tls = cli.tls.into();
 
@@ -51,17 +53,22 @@ enum DiscoverCommand {
     Autoconfig(AutoconfigCommand),
     #[cfg(feature = "pacc")]
     Pacc(PaccCommand),
+    #[cfg(feature = "rfc6186")]
+    Srv(SrvCommand),
     Completions(CompletionCommand),
     Manuals(ManualCommand),
 }
 
 impl DiscoverCommand {
     pub fn execute(self, printer: &mut impl Printer, tls: &Tls) -> Result<()> {
+        let _ = tls;
         match self {
             #[cfg(feature = "autoconfig")]
             Self::Autoconfig(cmd) => cmd.execute(printer, tls),
             #[cfg(feature = "pacc")]
             Self::Pacc(cmd) => cmd.execute(printer, tls),
+            #[cfg(feature = "rfc6186")]
+            Self::Srv(cmd) => cmd.execute(printer),
             Self::Completions(cmd) => cmd.execute(printer, DiscoverCli::command()),
             Self::Manuals(cmd) => cmd.execute(printer, DiscoverCli::command()),
         }
@@ -89,6 +96,7 @@ impl From<TlsFlags> for Tls {
             provider: flags.tls.map(Into::into),
             rustls: Rustls {
                 crypto: flags.rustls_crypto.map(Into::into),
+                alpn: Vec::new(),
             },
             cert: flags.tls_cert,
         }

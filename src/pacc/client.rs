@@ -1,65 +1,77 @@
 //! # Standard, blocking PACC discovery client
 //!
-//! Builder-style wrapper around [`DiscoveryPacc`]. The pool comes
-//! with default factories for `http`, `https`, and `tcp` already
-//! registered — callers just construct with [`new`] and call
-//! [`discover`]. HTTPS connections fail at runtime if no TLS
-//! feature is enabled. BYO callers register their own scheme
-//! factories through [`with_factory`].
+//! [`DiscoveryPaccClientStd`] drives the [`DiscoveryPacc`] coroutine
+//! end-to-end through a local [`StreamPool`]. One method:
+//! [`discover`], which runs the full PACC exchange (HTTPS fetch of
+//! the well-known URL → DNS TXT digest verification → JSON parse) for
+//! one domain.
 //!
-//! [`new`]: DiscoveryPaccClient::new
-//! [`discover`]: DiscoveryPaccClient::discover
-//! [`with_factory`]: DiscoveryPaccClient::with_factory
+//! Construction:
+//!
+//! - Light: [`new`] returns a client with only the default `tcp`
+//!   factory registered. Plug `http` / `https` factories via
+//!   [`with_factory`].
+//! - Full: under the `stream` feature, chain [`with_tls`] after
+//!   [`new`] to auto-register `http` / `https` factories backed by
+//!   [`pimalaya_stream::std::stream::StreamStd`].
+//!
+//! [`new`]: DiscoveryPaccClientStd::new
+//! [`with_factory`]: DiscoveryPaccClientStd::with_factory
+//! [`with_tls`]: DiscoveryPaccClientStd::with_tls
+//! [`discover`]: DiscoveryPaccClientStd::discover
 
-use pimalaya_stream::{
-    std::pool::{Stream, StreamPool},
-    tls::Tls,
-};
 use thiserror::Error;
 use url::Url;
 
-use crate::pacc::{coroutine::*, types::PaccConfig};
+use crate::{
+    pacc::{
+        discover::{DiscoveryPacc, DiscoveryPaccError, DiscoveryPaccResult},
+        types::PaccConfig,
+    },
+    shared::pool::{Stream, StreamPool},
+};
 
-/// Errors returned by [`DiscoveryPaccClient::discover`].
+const READ_BUFFER_SIZE: usize = 8 * 1024;
+
+/// Errors returned by [`DiscoveryPaccClientStd::discover`].
 #[derive(Debug, Error)]
-pub enum DiscoveryPaccClientError {
+pub enum DiscoveryPaccClientStdError {
+    /// The underlying PACC coroutine errored out.
     #[error(transparent)]
     Discovery(#[from] DiscoveryPaccError),
+    /// Read or write against an open stream failed.
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// [`StreamPool::get`] failed (unknown scheme, factory error).
     #[error(transparent)]
     Pool(#[from] anyhow::Error),
 }
 
-/// Std-blocking client that drives [`DiscoveryPacc`] end-to-end.
-pub struct DiscoveryPaccClient {
+/// Std-blocking PACC discovery client.
+pub struct DiscoveryPaccClientStd {
+    dns: Url,
     pool: StreamPool,
-    resolver: Url,
 }
 
-impl DiscoveryPaccClient {
+impl DiscoveryPaccClientStd {
     /// Builds a client that resolves the digest TXT record through
-    /// `resolver` (a `tcp://host:port` URL pointing at a DNS-over-
-    /// TCP resolver). The underlying pool is pre-populated with
-    /// default `http`/`https`/`tcp` factories using [`Tls::default`];
-    /// HTTPS connections fail at runtime if no TLS feature is
-    /// enabled.
-    pub fn new(resolver: Url) -> Self {
+    /// `dns` (a `tcp://host:port` URL pointing at a DNS-over-TCP
+    /// resolver). The underlying pool is pre-populated with the
+    /// default `tcp` factory only; plug `http` / `https` factories
+    /// via [`with_factory`] before calling [`discover`], or chain
+    /// [`with_tls`] under the `stream` feature.
+    ///
+    /// [`with_factory`]: Self::with_factory
+    /// [`with_tls`]: Self::with_tls
+    /// [`discover`]: Self::discover
+    pub fn new(dns: Url) -> Self {
         Self {
-            pool: Default::default(),
-            resolver,
+            dns,
+            pool: StreamPool::new(),
         }
     }
 
-    /// Replaces the underlying pool's TLS profile (re-registering
-    /// the default factories under it).
-    pub fn with_tls(mut self, tls: Tls) -> Self {
-        self.pool = StreamPool::new(tls);
-        self
-    }
-
-    /// Registers (or replaces) the pool factory for `scheme`. Use
-    /// to plug a custom TLS crate, transport, or mock. Pass a
+    /// Registers (or replaces) the pool factory for `scheme`. Pass a
     /// lowercase literal (`"https"`, `"tcp"`, …).
     pub fn with_factory<F, S>(mut self, scheme: &'static str, factory: F) -> Self
     where
@@ -70,19 +82,27 @@ impl DiscoveryPaccClient {
         self
     }
 
-    /// Runs the full PACC discovery for `domain`. Streams are
-    /// opened on demand: HTTPS to the well-known PACC URL on the
-    /// fetch step, plain TCP to the configured resolver on the
-    /// verify step.
-    pub fn discover(&mut self, domain: &str) -> Result<PaccConfig, DiscoveryPaccClientError> {
-        let mut pacc = DiscoveryPacc::new(domain, self.resolver.clone())?;
+    /// Bootstraps the pool with `http` / `https` factories backed by
+    /// [`pimalaya_stream::std::stream::StreamStd`] using the given
+    /// `tls` profile. Gated by the `stream` feature.
+    #[cfg(feature = "stream")]
+    pub fn with_tls(mut self, tls: pimalaya_stream::tls::Tls) -> Self {
+        self.pool = self.pool.with_http_factories(tls);
+        self
+    }
 
-        let mut buf = [0u8; 8192];
+    /// Runs the full PACC discovery for `domain`. Streams are opened
+    /// on demand: HTTPS to the well-known PACC URL, plain TCP to the
+    /// configured DNS resolver.
+    pub fn discover(&mut self, domain: &str) -> Result<PaccConfig, DiscoveryPaccClientStdError> {
+        let mut coroutine = DiscoveryPacc::new(domain, self.dns.clone())?;
+        let mut buf = [0u8; READ_BUFFER_SIZE];
         let mut arg: Option<&[u8]> = None;
 
         loop {
-            match pacc.resume(arg.take()) {
+            match coroutine.resume(arg.take()) {
                 DiscoveryPaccResult::Ok(config) => return Ok(config),
+                DiscoveryPaccResult::Err(err) => return Err(err.into()),
                 DiscoveryPaccResult::WantsRead { url } => {
                     let stream = self.pool.get(&url)?;
                     let n = stream.read(&mut buf)?;
@@ -92,7 +112,6 @@ impl DiscoveryPaccClient {
                     let stream = self.pool.get(&url)?;
                     stream.write_all(&bytes)?;
                 }
-                DiscoveryPaccResult::Err(err) => return Err(err.into()),
             }
         }
     }

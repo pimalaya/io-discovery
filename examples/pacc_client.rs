@@ -1,7 +1,7 @@
-//! Drives the std-blocking PACC client end-to-end. The client opens
-//! its HTTPS and DNS streams lazily and reuses them across the
-//! coroutine — the caller only configures the resolver (and
-//! optionally the TLS profile).
+//! Drives [`DiscoveryPaccClientStd`] end-to-end. The client opens
+//! HTTPS and DNS streams lazily and reuses them across the
+//! coroutine; the caller only configures the resolver (and
+//! optionally the TLS profile via `with_tls`).
 //!
 //! ```sh
 //! DOMAIN=fastmail.com DNS=1.1.1.1:53 \
@@ -10,7 +10,7 @@
 
 use std::env;
 
-use io_discovery::pacc::client::DiscoveryPaccClient;
+use io_discovery::pacc::client::DiscoveryPaccClientStd;
 use url::Url;
 
 fn main() {
@@ -20,8 +20,7 @@ fn main() {
     let dns = env::var("DNS").unwrap_or_else(|_| String::from("1.1.1.1:53"));
     let resolver = Url::parse(&format!("tcp://{dns}")).expect("DNS must be `host:port`");
 
-    let mut client = DiscoveryPaccClient::new(resolver);
+    let mut client = DiscoveryPaccClientStd::new(resolver);
     let config = client.discover(&domain).unwrap();
-
     println!("{config:#?}");
 }

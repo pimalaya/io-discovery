@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   [PACC]: https://www.ietf.org/archive/id/draft-ietf-mailmaint-pacc-02.html
 
+- Added RFC 6186 SRV discovery support (requires `rfc6186` feature).
+
 - Added CLI (requires `cli` feature).
 
 [unreleased]: https://github.com/pimalaya/io-discovery/compare/root..HEAD

@@ -30,7 +30,8 @@ This repository ships three things:
   - Thunderbird ISPDB lookup
   - DNS MX-based retry against the MX target's parent domain
   - DNS TXT `mailconf=<URL>` redirect
-  - DNS SRV (`_imap._tcp`, `_imaps._tcp`, `_submission._tcp`) assembly
+- **RFC 6186 SRV** discovery support (requires `rfc6186` feature):
+  - `_imap._tcp`, `_imaps._tcp`, `_submission._tcp` assembly into a single report
 - **PACC** discovery support <sup>[draft-ietf-mailmaint-pacc-02](https://datatracker.ietf.org/doc/html/draft-ietf-mailmaint-pacc-02)</sup> (requires `pacc` feature):
   - well-known JSON configuration fetch
   - SHA-256 digest verification against the `_ua-auto-config` TXT record
@@ -69,10 +70,10 @@ To use `io-discovery` as a library, add it to your `Cargo.toml`:
 
 ```toml,ignore
 [dependencies]
-io-discovery = { version = "0.0.1", default-features = false, features = ["autoconfig", "pacc", "client"] }
+io-discovery = { version = "0.0.1", default-features = false, features = ["autoconfig", "pacc", "rfc6186", "client"] }
 ```
 
-The `client` feature pulls in the `std`-blocking helpers. Drop it (and pick only `autoconfig` and/or `pacc`) for a `no_std`-friendly, pure-coroutine build.
+The `client` feature pulls in the `std`-blocking helpers. Drop it (and pick any combination of `autoconfig` / `pacc` / `rfc6186`) for a `no_std`-friendly, pure-coroutine build.
 
 ### Nix
 
@@ -109,19 +110,23 @@ nix develop --command cargo build --release
 Using a low-level DNS MX I/O-free coroutine:
 
 ```rust,ignore
-let mut stream = TcpStream::connect("1.1.1.1:53").unwrap();
+use std::{io::{Read, Write}, net::TcpStream};
+use io_discovery::autoconfig::mx::{DiscoveryDnsMx, DiscoveryDnsMxResult};
+use url::Url;
 
-let mut coroutine = DiscoveryDnsMx::new("fastmail.com");
+let resolver = Url::parse("tcp://1.1.1.1:53").unwrap();
+let mut stream = TcpStream::connect("1.1.1.1:53").unwrap();
+let mut coroutine = DiscoveryDnsMx::new("fastmail.com", resolver);
 let mut buf = [0u8; 4096];
-let mut arg = None;
+let mut arg: Option<&[u8]> = None;
 
 let records = loop {
     match coroutine.resume(arg.take()) {
         DiscoveryDnsMxResult::Ok(records) => break records,
-        DiscoveryDnsMxResult::WantsWrite(bytes) => {
+        DiscoveryDnsMxResult::WantsWrite { bytes, .. } => {
             stream.write_all(&bytes).unwrap();
         }
-        DiscoveryDnsMxResult::WantsRead => {
+        DiscoveryDnsMxResult::WantsRead { .. } => {
             let n = stream.read(&mut buf).unwrap();
             arg = Some(&buf[..n]);
         }
@@ -137,31 +142,15 @@ for record in records {
 Using a mid-level std PACC client:
 
 ```rust,ignore
-use std::{net::TcpStream, sync::Arc};
+use io_discovery::pacc::client::DiscoveryPaccClientStd;
+use pimalaya_stream::tls::Tls;
+use url::Url;
 
-use io_discovery::pacc::{client::DiscoveryPaccClient, coroutine::DiscoveryPacc};
-use rustls::{ClientConfig, ClientConnection, StreamOwned};
-use rustls_platform_verifier::ConfigVerifierExt;
+let dns = Url::parse("tcp://1.1.1.1:53").unwrap();
+let mut client = DiscoveryPaccClientStd::new(dns).with_tls(Tls::default());
 
-// build TLS stream to fastmail.com (HTTP GET)
-let server_name = "fastmail.com".try_into().unwrap();
-let config = ClientConfig::with_platform_verifier().unwrap();
-let conn = ClientConnection::new(Arc::new(config), server_name).unwrap();
-let http = TcpStream::connect("fastmail.com:443").unwrap();
-let https = StreamOwned::new(conn, http);
-
-// build TCP stream to fastmail.com (DNS TXT)
-let dns = TcpStream::connect("1.1.1.1:53").unwrap();
-
-// build a PACC discovery client
-let mut client = DiscoveryPaccClient::new(https, dns);
-
-// get verified PACC config
 let config = client.discover("fastmail.com").unwrap();
 println!("{config:#?}");
-
-// get back streams from client
-let (https, dns) = client.into_inner();
 ```
 
 ### CLI
@@ -172,16 +161,22 @@ Run the full Thunderbird Autoconfiguration chain on `<local_part> <domain>`:
 discover autoconfig user fastmail.com
 ```
 
-The chain tries — in order — every ISP main URL, every `/.well-known/` URL, the Thunderbird ISPDB, then re-tries the same against the MX target's parent domain, then a `mailconf=<URL>` TXT redirect, then SRV records assembled into an autoconfig.
+The chain tries, in order: every ISP main URL (secure then plain), every `/.well-known/` URL (secure then plain), the Thunderbird ISPDB, then re-tries the same against the MX target's parent domain, then logs the `mailconf=<URL>` TXT redirect if one is published.
 
-Drive a single step instead:
+Run a single primitive instead:
 
 ```ignore
 discover autoconfig user fastmail.com isp --secure
+discover autoconfig user fastmail.com isp-fallback --secure
 discover autoconfig user fastmail.com ispdb --secure
 discover autoconfig user fastmail.com mx
 discover autoconfig user fastmail.com mailconf
-discover autoconfig user fastmail.com srv
+```
+
+Run RFC 6186 SRV discovery (top-level subcommand):
+
+```ignore
+discover srv fastmail.com
 ```
 
 Run PACC discovery:
@@ -245,9 +240,10 @@ at your option.
 
 Special thanks to the [NLnet foundation](https://nlnet.nl/) and the [European Commission](https://www.ngi.eu/) that have been financially supporting the project for years:
 
-- 2022: [NGI Assure](https://nlnet.nl/project/Himalaya/)
-- 2023: [NGI Zero Entrust](https://nlnet.nl/project/Pimalaya/)
-- 2024: [NGI Zero Core](https://nlnet.nl/project/Pimalaya-PIM/) *(still ongoing in 2026)*
+- 2022 → 2023: [NGI Assure](https://nlnet.nl/project/Himalaya/)
+- 2023 → 2024: [NGI Zero Entrust](https://nlnet.nl/project/Pimalaya/)
+- 2024 → 2026: [NGI Zero Core](https://nlnet.nl/project/Pimalaya-PIM/)
+- *2027 in preparation…*
 
 If you appreciate the project, feel free to donate using one of the following providers:
 

@@ -12,5 +12,7 @@ extern crate std;
 pub mod autoconfig;
 #[cfg(feature = "pacc")]
 pub mod pacc;
-#[cfg(any(feature = "autoconfig", feature = "pacc"))]
+#[cfg(feature = "rfc6186")]
+pub mod rfc6186;
+#[cfg(any(feature = "autoconfig", feature = "pacc", feature = "rfc6186"))]
 pub mod shared;

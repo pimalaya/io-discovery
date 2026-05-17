@@ -1,12 +1,12 @@
-//! Drives the autoconfig DNS MX coroutine directly against a plain
-//! `TcpStream` to a DNS resolver — no client wrapper, no
+//! Runs the autoconfig DNS MX coroutine directly against a plain
+//! `TcpStream` to a DNS resolver: no client wrapper, no
 //! `pimalaya-stream`. The coroutine yields the resolver URL on every
 //! `WantsRead` / `WantsWrite`; in this single-endpoint example we
 //! ignore it and just use the one open stream.
 //!
 //! ```sh
 //! DOMAIN=posteo.net DNS=1.1.1.1:53 \
-//!   cargo run --example autoconfig-dns-mx --features autoconfig
+//!   cargo run --example autoconfig-mx --features autoconfig
 //! ```
 
 use std::{
@@ -15,7 +15,7 @@ use std::{
     net::TcpStream,
 };
 
-use io_discovery::autoconfig::coroutines::dns_mx::{DiscoveryDnsMx, DiscoveryDnsMxResult};
+use io_discovery::autoconfig::mx::{DiscoveryDnsMx, DiscoveryDnsMxResult};
 use url::Url;
 
 fn main() {

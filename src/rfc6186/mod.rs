@@ -1,8 +1,9 @@
-//! PACC discovery (draft-ietf-mailmaint-pacc-02).
+//! RFC 6186 SRV-based mail service discovery.
 
 #[cfg(feature = "cli")]
 pub mod cli;
 #[cfg(feature = "client")]
 pub mod client;
 pub mod discover;
+pub mod srv;
 pub mod types;

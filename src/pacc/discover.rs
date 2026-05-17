@@ -44,8 +44,8 @@ use url::{ParseError, Url};
 use crate::{
     pacc::types::PaccConfig,
     shared::{
-        dns_txt::{DiscoveryDnsTxt, DiscoveryDnsTxtError, DiscoveryDnsTxtResult},
-        http_get::{HttpGet, HttpGetError, HttpGetResult},
+        dns::{DiscoveryDnsTxt, DiscoveryDnsTxtError, DiscoveryDnsTxtResult},
+        http::{HttpGet, HttpGetError, HttpGetResult},
     },
 };
 

@@ -1,98 +1,99 @@
 //! # Standard, blocking autoconfig discovery client
 //!
-//! Builder-style wrapper around the autoconfig coroutines. The pool
-//! comes with default factories for `http`, `https`, and `tcp`
-//! already registered — callers just construct with [`new`] and
-//! call one of [`isp`] / [`mx`] / [`mailconf`] / [`srv_query`].
-//! HTTPS connections fail at runtime if no TLS feature is enabled.
-//! BYO callers register their own scheme factories through
-//! [`with_factory`].
+//! [`DiscoveryAutoconfigClientStd`] exposes one method per Mozilla
+//! autoconfig primitive ([`isp`], [`isp_fallback`], [`ispdb`],
+//! [`mx`], [`mailconf`]); each runs exactly one coroutine end-to-end
+//! through a local [`StreamPool`]. Composition (try several
+//! candidates, fall back through MX-derived parents, race variants in
+//! parallel, ...) is the caller's responsibility.
 //!
-//! [`new`]: DiscoveryAutoconfigClient::new
-//! [`isp`]: DiscoveryAutoconfigClient::isp
-//! [`mx`]: DiscoveryAutoconfigClient::mx
-//! [`mailconf`]: DiscoveryAutoconfigClient::mailconf
-//! [`srv_query`]: DiscoveryAutoconfigClient::srv_query
-//! [`with_factory`]: DiscoveryAutoconfigClient::with_factory
+//! Construction:
+//!
+//! - Light: [`new`] returns a client with only the default `tcp`
+//!   factory registered. Plug `http` / `https` factories via
+//!   [`with_factory`].
+//! - Full: under the `stream` feature, chain [`with_tls`] after
+//!   [`new`] to auto-register `http` / `https` factories backed by
+//!   [`pimalaya_stream::std::stream::StreamStd`].
+//!
+//! [`new`]: DiscoveryAutoconfigClientStd::new
+//! [`with_factory`]: DiscoveryAutoconfigClientStd::with_factory
+//! [`with_tls`]: DiscoveryAutoconfigClientStd::with_tls
+//! [`isp`]: DiscoveryAutoconfigClientStd::isp
+//! [`isp_fallback`]: DiscoveryAutoconfigClientStd::isp_fallback
+//! [`ispdb`]: DiscoveryAutoconfigClientStd::ispdb
+//! [`mx`]: DiscoveryAutoconfigClientStd::mx
+//! [`mailconf`]: DiscoveryAutoconfigClientStd::mailconf
 
-use alloc::{
-    borrow::ToOwned,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::vec::Vec;
 
 use domain::new::{
-    base::{
-        Record,
-        name::{NameBuf, RevNameBuf},
-    },
-    rdata::{Mx, Srv},
-};
-use pimalaya_stream::{
-    std::pool::{Stream, StreamPool},
-    tls::Tls,
+    base::{Record, name::RevNameBuf},
+    rdata::Mx,
 };
 use thiserror::Error;
-use url::{ParseError, Url};
+use url::Url;
 
 use crate::{
     autoconfig::{
-        coroutines::{dns_mx::*, dns_srv::*, isp::*, mailconf::*},
-        types::*,
+        isp::{DiscoveryIsp, DiscoveryIspError, DiscoveryIspResult},
+        mailconf::{DiscoveryMailconf, DiscoveryMailconfError, DiscoveryMailconfResult},
+        mx::{DiscoveryDnsMx, DiscoveryDnsMxError, DiscoveryDnsMxResult},
+        types::Autoconfig,
     },
-    shared::dns_txt::*,
+    shared::pool::{Stream, StreamPool},
 };
 
-/// Errors returned by [`DiscoveryAutoconfigClient`].
+const READ_BUFFER_SIZE: usize = 8 * 1024;
+
+/// Errors returned by [`DiscoveryAutoconfigClientStd`].
 #[derive(Debug, Error)]
-pub enum DiscoveryAutoconfigClientError {
+pub enum DiscoveryAutoconfigClientStdError {
+    /// A single ISP fetch (main / fallback / db URL) failed.
     #[error(transparent)]
     Isp(#[from] DiscoveryIspError),
+    /// The DNS MX coroutine errored out.
     #[error(transparent)]
     DnsMx(#[from] DiscoveryDnsMxError),
-    #[error(transparent)]
-    DnsTxt(#[from] DiscoveryDnsTxtError),
-    #[error(transparent)]
-    DnsSrv(#[from] DiscoveryDnsSrvError),
+    /// The mailconf TXT coroutine errored out.
     #[error(transparent)]
     Mailconf(#[from] DiscoveryMailconfError),
+    /// `DiscoveryIsp::*_url` could not build the candidate URL from
+    /// the caller's input.
     #[error(transparent)]
-    UrlParse(#[from] ParseError),
+    UrlParse(#[from] url::ParseError),
+    /// Read or write against an open stream failed.
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// [`StreamPool::get`] failed (unknown scheme, factory error).
     #[error(transparent)]
     Pool(#[from] anyhow::Error),
-    #[error("autoconfig discovery exhausted all strategies for `{0}`")]
-    NotFound(String),
 }
 
-/// Std-blocking autoconfig client driven through a [`StreamPool`].
-pub struct DiscoveryAutoconfigClient {
+/// Std-blocking Mozilla autoconfig discovery client.
+pub struct DiscoveryAutoconfigClientStd {
+    dns: Url,
     pool: StreamPool,
-    resolver: Url,
 }
 
-impl DiscoveryAutoconfigClient {
-    /// Builds a client that resolves DNS lookups through `resolver`
-    /// (a `tcp://host:port` URL pointing at a DNS-over-TCP
-    /// resolver). The underlying pool is pre-populated with default
-    /// `http`/`https`/`tcp` factories using [`Tls::default`].
-    pub fn new(resolver: Url) -> Self {
+impl DiscoveryAutoconfigClientStd {
+    /// Builds a client that resolves DNS lookups through `dns` (a
+    /// `tcp://host:port` URL pointing at a DNS-over-TCP resolver).
+    /// The underlying pool is pre-populated with the default `tcp`
+    /// factory only; plug `http` / `https` factories via
+    /// [`with_factory`] before calling any HTTPS-bound method, or
+    /// chain [`with_tls`] under the `stream` feature.
+    ///
+    /// [`with_factory`]: Self::with_factory
+    /// [`with_tls`]: Self::with_tls
+    pub fn new(dns: Url) -> Self {
         Self {
-            pool: StreamPool::default(),
-            resolver,
+            dns,
+            pool: StreamPool::new(),
         }
     }
 
-    /// Replaces the underlying pool's TLS profile (re-registering
-    /// the default factories under it).
-    pub fn with_tls(mut self, tls: Tls) -> Self {
-        self.pool = StreamPool::new(tls);
-        self
-    }
-
-    /// Registers (or replaces) the pool factory for `scheme`. Pass
-    /// a lowercase literal (`"https"`, `"tcp"`, …).
+    /// Registers (or replaces) the pool factory for `scheme`.
     pub fn with_factory<F, S>(mut self, scheme: &'static str, factory: F) -> Self
     where
         F: FnMut(&Url) -> anyhow::Result<S> + 'static,
@@ -102,43 +103,121 @@ impl DiscoveryAutoconfigClient {
         self
     }
 
-    /// Drives [`DiscoveryIsp`] for one ISP candidate URL.
-    pub fn isp(&mut self, url: Url) -> Result<Autoconfig, DiscoveryAutoconfigClientError> {
-        let mut isp = DiscoveryIsp::new(url);
-        let mut buf = [0u8; 8192];
-        let mut arg = None;
+    /// Bootstraps the pool with `http` / `https` factories backed by
+    /// [`pimalaya_stream::std::stream::StreamStd`] using the given
+    /// `tls` profile. Gated by the `stream` feature.
+    #[cfg(feature = "stream")]
+    pub fn with_tls(mut self, tls: pimalaya_stream::tls::Tls) -> Self {
+        self.pool = self.pool.with_http_factories(tls);
+        self
+    }
+
+    /// Fetches the ISP main URL
+    /// (`http[s]://autoconfig.<domain>/mail/config-v1.1.xml?emailaddress=...`).
+    pub fn isp(
+        &mut self,
+        local_part: &str,
+        domain: &str,
+        secure: bool,
+    ) -> Result<Autoconfig, DiscoveryAutoconfigClientStdError> {
+        let url = DiscoveryIsp::main_url(local_part, domain, secure)?;
+        let mut coroutine = DiscoveryIsp::new(url.clone());
+        let mut buf = [0u8; READ_BUFFER_SIZE];
+        let mut arg: Option<&[u8]> = None;
 
         loop {
-            match isp.resume(arg) {
-                DiscoveryIspResult::Ok(autoconfig) => return Ok(autoconfig),
-                DiscoveryIspResult::WantsRead { url } => {
+            match coroutine.resume(arg.take()) {
+                DiscoveryIspResult::Ok(config) => return Ok(config),
+                DiscoveryIspResult::Err(err) => return Err(err.into()),
+                DiscoveryIspResult::WantsRead => {
                     let stream = self.pool.get(&url)?;
                     let n = stream.read(&mut buf)?;
                     arg = Some(&buf[..n]);
                 }
-                DiscoveryIspResult::WantsWrite { url, bytes } => {
+                DiscoveryIspResult::WantsWrite(bytes) => {
                     let stream = self.pool.get(&url)?;
                     stream.write_all(&bytes)?;
-                    arg = None;
                 }
-                DiscoveryIspResult::Err(err) => return Err(err.into()),
             }
         }
     }
 
-    /// Drives [`DiscoveryDnsMx`] for `domain`. Records are returned
-    /// sorted by ascending preference.
+    /// Fetches the ISP fallback URL
+    /// (`http[s]://<domain>/.well-known/autoconfig/mail/config-v1.1.xml`).
+    pub fn isp_fallback(
+        &mut self,
+        domain: &str,
+        secure: bool,
+    ) -> Result<Autoconfig, DiscoveryAutoconfigClientStdError> {
+        let url = DiscoveryIsp::fallback_url(domain, secure)?;
+        let mut coroutine = DiscoveryIsp::new(url.clone());
+        let mut buf = [0u8; READ_BUFFER_SIZE];
+        let mut arg: Option<&[u8]> = None;
+
+        loop {
+            match coroutine.resume(arg.take()) {
+                DiscoveryIspResult::Ok(config) => return Ok(config),
+                DiscoveryIspResult::Err(err) => return Err(err.into()),
+                DiscoveryIspResult::WantsRead => {
+                    let stream = self.pool.get(&url)?;
+                    let n = stream.read(&mut buf)?;
+                    arg = Some(&buf[..n]);
+                }
+                DiscoveryIspResult::WantsWrite(bytes) => {
+                    let stream = self.pool.get(&url)?;
+                    stream.write_all(&bytes)?;
+                }
+            }
+        }
+    }
+
+    /// Fetches the Thunderbird ISPDB
+    /// (`http[s]://autoconfig.thunderbird.net/v1.1/<domain>`).
+    pub fn ispdb(
+        &mut self,
+        domain: &str,
+        secure: bool,
+    ) -> Result<Autoconfig, DiscoveryAutoconfigClientStdError> {
+        let url = DiscoveryIsp::db_url(domain, secure)?;
+        let mut coroutine = DiscoveryIsp::new(url.clone());
+        let mut buf = [0u8; READ_BUFFER_SIZE];
+        let mut arg: Option<&[u8]> = None;
+
+        loop {
+            match coroutine.resume(arg.take()) {
+                DiscoveryIspResult::Ok(config) => return Ok(config),
+                DiscoveryIspResult::Err(err) => return Err(err.into()),
+                DiscoveryIspResult::WantsRead => {
+                    let stream = self.pool.get(&url)?;
+                    let n = stream.read(&mut buf)?;
+                    arg = Some(&buf[..n]);
+                }
+                DiscoveryIspResult::WantsWrite(bytes) => {
+                    let stream = self.pool.get(&url)?;
+                    stream.write_all(&bytes)?;
+                }
+            }
+        }
+    }
+
+    /// Returns the MX records for `domain`, sorted by ascending
+    /// preference (best first). Empty when the response carries no
+    /// MX answers.
     pub fn mx(
         &mut self,
         domain: &str,
-    ) -> Result<Vec<Record<RevNameBuf, Mx<NameBuf>>>, DiscoveryAutoconfigClientError> {
-        let mut dns = DiscoveryDnsMx::new(domain, self.resolver.clone());
-        let mut buf = [0u8; 4096];
-        let mut arg = None;
+    ) -> Result<
+        Vec<Record<RevNameBuf, Mx<domain::new::base::name::NameBuf>>>,
+        DiscoveryAutoconfigClientStdError,
+    > {
+        let mut coroutine = DiscoveryDnsMx::new(domain, self.dns.clone());
+        let mut buf = [0u8; READ_BUFFER_SIZE];
+        let mut arg: Option<&[u8]> = None;
 
         loop {
-            match dns.resume(arg) {
+            match coroutine.resume(arg.take()) {
                 DiscoveryDnsMxResult::Ok(records) => return Ok(records),
+                DiscoveryDnsMxResult::Err(err) => return Err(err.into()),
                 DiscoveryDnsMxResult::WantsRead { url } => {
                     let stream = self.pool.get(&url)?;
                     let n = stream.read(&mut buf)?;
@@ -147,23 +226,22 @@ impl DiscoveryAutoconfigClient {
                 DiscoveryDnsMxResult::WantsWrite { url, bytes } => {
                     let stream = self.pool.get(&url)?;
                     stream.write_all(&bytes)?;
-                    arg = None;
                 }
-                DiscoveryDnsMxResult::Err(err) => return Err(err.into()),
             }
         }
     }
 
-    /// Drives [`DiscoveryMailconf`] for `domain`. Returns the URL
-    /// declared in the `mailconf=` TXT record.
-    pub fn mailconf(&mut self, domain: &str) -> Result<Url, DiscoveryAutoconfigClientError> {
-        let mut mc = DiscoveryMailconf::new(domain, self.resolver.clone());
-        let mut buf = [0u8; 4096];
-        let mut arg = None;
+    /// Looks up the `mailconf=<URL>` TXT record on `domain` and
+    /// returns the parsed redirect URL.
+    pub fn mailconf(&mut self, domain: &str) -> Result<Url, DiscoveryAutoconfigClientStdError> {
+        let mut coroutine = DiscoveryMailconf::new(domain, self.dns.clone());
+        let mut buf = [0u8; READ_BUFFER_SIZE];
+        let mut arg: Option<&[u8]> = None;
 
         loop {
-            match mc.resume(arg) {
+            match coroutine.resume(arg.take()) {
                 DiscoveryMailconfResult::Ok(url) => return Ok(url),
+                DiscoveryMailconfResult::Err(err) => return Err(err.into()),
                 DiscoveryMailconfResult::WantsRead { url } => {
                     let stream = self.pool.get(&url)?;
                     let n = stream.read(&mut buf)?;
@@ -172,114 +250,8 @@ impl DiscoveryAutoconfigClient {
                 DiscoveryMailconfResult::WantsWrite { url, bytes } => {
                     let stream = self.pool.get(&url)?;
                     stream.write_all(&bytes)?;
-                    arg = None;
                 }
-                DiscoveryMailconfResult::Err(err) => return Err(err.into()),
             }
         }
-    }
-
-    /// Drives [`DiscoveryDnsSrv`] for the fully-qualified service
-    /// name (`_imap._tcp.<domain>`, etc.).
-    pub fn srv_query(
-        &mut self,
-        qname: &str,
-    ) -> Result<Vec<Record<RevNameBuf, Srv<NameBuf>>>, DiscoveryAutoconfigClientError> {
-        let mut dns = DiscoveryDnsSrv::new(qname, self.resolver.clone());
-        let mut buf = [0u8; 4096];
-        let mut arg = None;
-
-        loop {
-            match dns.resume(arg) {
-                DiscoveryDnsSrvResult::Ok(records) => return Ok(records),
-                DiscoveryDnsSrvResult::WantsRead { url } => {
-                    let stream = self.pool.get(&url)?;
-                    let n = stream.read(&mut buf)?;
-                    arg = Some(&buf[..n]);
-                }
-                DiscoveryDnsSrvResult::WantsWrite { url, bytes } => {
-                    let stream = self.pool.get(&url)?;
-                    stream.write_all(&bytes)?;
-                    arg = None;
-                }
-                DiscoveryDnsSrvResult::Err(err) => return Err(err.into()),
-            }
-        }
-    }
-
-    /// Builds an [`Autoconfig`] from the best SRV records for the
-    /// `_imap._tcp`, `_imaps._tcp` and `_submission._tcp` services on
-    /// `domain`. Returns [`DiscoveryAutoconfigClientError::NotFound`]
-    /// when none of the three is present.
-    pub fn assemble_srv(
-        &self,
-        domain: &str,
-        imap: Option<Srv<NameBuf>>,
-        imaps: Option<Srv<NameBuf>>,
-        submission: Option<Srv<NameBuf>>,
-    ) -> Result<Autoconfig, DiscoveryAutoconfigClientError> {
-        let mut config = Autoconfig {
-            version: "1.1".to_owned(),
-            email_provider: EmailProvider {
-                id: domain.to_owned(),
-                domain: Vec::new(),
-                display_name: None,
-                display_short_name: None,
-                incoming_server: Vec::new(),
-                outgoing_server: Vec::new(),
-                documentation: Vec::new(),
-            },
-            oauth2: None,
-        };
-
-        if let Some(srv) = imap {
-            config.email_provider.incoming_server.push(Server {
-                r#type: ServerType::Imap,
-                hostname: Some(srv.target.to_string().trim_end_matches('.').to_owned()),
-                port: Some(srv.port.get()),
-                socket_type: Some(SecurityType::Starttls),
-                username: None,
-                authentication: vec![AuthenticationType::PasswordCleartext],
-                pop3: None,
-            });
-        }
-
-        if let Some(srv) = imaps {
-            config.email_provider.incoming_server.push(Server {
-                r#type: ServerType::Imap,
-                hostname: Some(srv.target.to_string().trim_end_matches('.').to_owned()),
-                port: Some(srv.port.get()),
-                socket_type: Some(SecurityType::Tls),
-                username: None,
-                authentication: vec![AuthenticationType::PasswordCleartext],
-                pop3: None,
-            });
-        }
-
-        if let Some(srv) = submission {
-            let security = match srv.port.get() {
-                25 => SecurityType::Plain,
-                587 => SecurityType::Starttls,
-                _ => SecurityType::Tls,
-            };
-
-            config.email_provider.outgoing_server.push(Server {
-                r#type: ServerType::Smtp,
-                hostname: Some(srv.target.to_string().trim_end_matches('.').to_owned()),
-                port: Some(srv.port.get()),
-                socket_type: Some(security),
-                username: None,
-                authentication: vec![AuthenticationType::PasswordCleartext],
-                pop3: None,
-            });
-        }
-
-        if config.email_provider.incoming_server.is_empty()
-            && config.email_provider.outgoing_server.is_empty()
-        {
-            return Err(DiscoveryAutoconfigClientError::NotFound(domain.to_owned()));
-        }
-
-        Ok(config)
     }
 }

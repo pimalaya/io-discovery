@@ -2,9 +2,13 @@
 //!
 //! [`DiscoveryIsp`] is a single-URL fetch coroutine: it drives one
 //! [`HttpGet`] cycle and parses the response body as a Mozilla
-//! [Autoconfiguration] XML document. URL selection is the runtime's
-//! responsibility — pair this coroutine with the static URL helpers
-//! ([`main_url`], [`fallback_url`], [`db_url`], [`all_urls`]).
+//! [Autoconfiguration] XML document. URL selection and stream routing
+//! are the runtime's responsibility: the caller pairs this coroutine
+//! with one of the static URL helpers ([`main_url`], [`fallback_url`],
+//! [`db_url`], [`all_urls`]) and keeps a single HTTP stream open
+//! against that URL. The coroutine itself does not echo the URL on
+//! `WantsRead` / `WantsWrite`; multi-URL orchestration is the
+//! caller's responsibility.
 //!
 //! [Autoconfiguration]: https://wiki.mozilla.org/Thunderbird:Autoconfiguration
 //! [`main_url`]: DiscoveryIsp::main_url
@@ -23,7 +27,7 @@ use url::{ParseError, Url};
 
 use crate::{
     autoconfig::types::Autoconfig,
-    shared::http_get::{HttpGet, HttpGetError, HttpGetResult},
+    shared::http::{HttpGet, HttpGetError, HttpGetResult},
 };
 
 /// Errors that can occur during a single ISP autoconfig HTTP exchange.
@@ -41,11 +45,12 @@ pub enum DiscoveryIspError {
 pub enum DiscoveryIspResult {
     /// The fetch successfully decoded an autoconfig.
     Ok(Autoconfig),
-    /// The fetch wants more bytes from the stream open on `url`.
-    WantsRead { url: Url },
+    /// The fetch wants more bytes from the stream open on the URL
+    /// this coroutine was built with.
+    WantsRead,
     /// The fetch wants the given bytes written to the stream open on
-    /// `url`.
-    WantsWrite { url: Url, bytes: Vec<u8> },
+    /// the URL this coroutine was built with.
+    WantsWrite(Vec<u8>),
     /// The fetch failed; the runtime should drop this URL and try the
     /// next one.
     Err(DiscoveryIspError),
@@ -54,7 +59,6 @@ pub enum DiscoveryIspResult {
 /// HTTP+XML fetch coroutine for a single ISP autoconfig URL.
 pub struct DiscoveryIsp {
     get: HttpGet,
-    url: Url,
 }
 
 impl DiscoveryIsp {
@@ -110,13 +114,11 @@ impl DiscoveryIsp {
         ])
     }
 
-    /// Builds a fetcher for `url`. The URL is yielded back on every
-    /// `WantsRead` / `WantsWrite` so the runtime can route the bytes
-    /// to the correct stream.
+    /// Builds a fetcher for `url`. The runtime is expected to hold a
+    /// stream open on that URL for the lifetime of the coroutine.
     pub fn new(url: Url) -> Self {
         Self {
-            get: HttpGet::new(url.clone()),
-            url,
+            get: HttpGet::new(url),
         }
     }
 
@@ -135,13 +137,8 @@ impl DiscoveryIsp {
                 }
             }
 
-            HttpGetResult::WantsRead => DiscoveryIspResult::WantsRead {
-                url: self.url.clone(),
-            },
-            HttpGetResult::WantsWrite(bytes) => DiscoveryIspResult::WantsWrite {
-                url: self.url.clone(),
-                bytes,
-            },
+            HttpGetResult::WantsRead => DiscoveryIspResult::WantsRead,
+            HttpGetResult::WantsWrite(bytes) => DiscoveryIspResult::WantsWrite(bytes),
             HttpGetResult::Err(err) => DiscoveryIspResult::Err(err.into()),
         }
     }

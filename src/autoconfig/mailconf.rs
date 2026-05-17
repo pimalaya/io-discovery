@@ -12,7 +12,7 @@
 //! per RFC 6376 §3.6.2.2 / RFC 7208 §3.3) before checking the prefix.
 //!
 //! Per-record failures (missing `mailconf=` prefix, non-UTF-8 value,
-//! malformed URL) are skipped silently — the coroutine only fails if
+//! malformed URL) are skipped silently: the coroutine only fails if
 //! no record at the queried name yields a valid URL.
 //!
 //! [Autoconfiguration]: https://wiki.mozilla.org/Thunderbird:Autoconfiguration
@@ -25,7 +25,7 @@ use log::trace;
 use thiserror::Error;
 use url::Url;
 
-use crate::shared::dns_txt::{DiscoveryDnsTxt, DiscoveryDnsTxtError, DiscoveryDnsTxtResult};
+use crate::shared::dns::{DiscoveryDnsTxt, DiscoveryDnsTxtError, DiscoveryDnsTxtResult};
 
 /// Errors that can occur during a single mailconf discovery.
 #[derive(Debug, Error)]

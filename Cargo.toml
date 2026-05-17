@@ -17,19 +17,22 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["autoconfig", "pacc", "client", "rustls-ring"]
-client = ["dep:anyhow", "dep:pimalaya-stream", "dep:url"]
-cli = ["dep:clap", "pimalaya-cli/terminal", "pimalaya-cli/table", "client"]
+default = []
+client = ["dep:anyhow", "dep:io-http", "io-http/client", "dep:url"]
+stream = ["client", "dep:pimalaya-stream"]
+cli = ["dep:clap", "pimalaya-cli/terminal", "pimalaya-cli/table", "stream"]
 autoconfig = ["dep:io-http", "dep:serde", "dep:serde-xml-rs", "dep:url"]
 pacc = ["dep:io-http", "dep:serde", "dep:serde_json", "dep:url", "dep:base64", "dep:sha2", "dep:subtle"]
-rustls-ring = ["pimalaya-stream?/rustls-ring"]
-rustls-aws = ["pimalaya-stream?/rustls-aws"]
-native-tls = ["pimalaya-stream?/native-tls"]
-vendored = ["pimalaya-stream?/vendored"]
+srv = ["rfc6186"]
+rfc6186 = ["dep:serde", "dep:url"]
+rustls-ring = ["stream", "pimalaya-stream/rustls-ring", "io-http/rustls-ring"]
+rustls-aws = ["stream", "pimalaya-stream/rustls-aws", "io-http/rustls-aws"]
+native-tls = ["stream", "pimalaya-stream/native-tls", "io-http/native-tls"]
+vendored = ["pimalaya-stream?/vendored", "io-http?/vendored"]
 
 [[example]]
-name = "autoconfig-dns-mx"
-path = "examples/autoconfig_dns_mx.rs"
+name = "autoconfig-mx"
+path = "examples/autoconfig_mx.rs"
 required-features = ["autoconfig"]
 
 [[example]]
@@ -47,8 +50,6 @@ pimalaya-cli = { version = "0.0.1", default-features = false, features = ["build
 
 [dev-dependencies]
 env_logger = "0.11"
-rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }
-rustls-platform-verifier = "0.7"
 
 [dependencies]
 anyhow = { version = "1", default-features = false, optional = true }
