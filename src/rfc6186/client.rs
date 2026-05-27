@@ -13,6 +13,8 @@
 //! [`with_factory`]: DiscoverySrvClientStd::with_factory
 //! [`discover`]: DiscoverySrvClientStd::discover
 
+use std::io;
+
 use thiserror::Error;
 use url::Url;
 
@@ -35,7 +37,7 @@ pub enum DiscoverySrvClientStdError {
     Discovery(#[from] DiscoverySrvError),
     /// Read or write against an open stream failed.
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     /// [`StreamPool::get`] failed (unknown scheme, factory error).
     #[error(transparent)]
     Pool(#[from] anyhow::Error),

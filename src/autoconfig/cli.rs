@@ -115,8 +115,10 @@ enum AutoconfigSubcommand {
     Isp {
         local_part: String,
         domain: String,
+        /// Use HTTPS instead of plain HTTP.
         #[arg(short, long)]
         secure: bool,
+        /// DNS resolver (`host:port`).
         #[arg(long, default_value = DNS_SERVER)]
         server: String,
     },
@@ -125,8 +127,10 @@ enum AutoconfigSubcommand {
     /// (`http[s]://<domain>/.well-known/autoconfig/mail/config-v1.1.xml`).
     IspFallback {
         domain: String,
+        /// Use HTTPS instead of plain HTTP.
         #[arg(short, long)]
         secure: bool,
+        /// DNS resolver (`host:port`).
         #[arg(long, default_value = DNS_SERVER)]
         server: String,
     },
@@ -135,8 +139,10 @@ enum AutoconfigSubcommand {
     /// (`http[s]://autoconfig.thunderbird.net/v1.1/<domain>`).
     Ispdb {
         domain: String,
+        /// Use HTTPS instead of plain HTTP.
         #[arg(short, long)]
         secure: bool,
+        /// DNS resolver (`host:port`).
         #[arg(long, default_value = DNS_SERVER)]
         server: String,
     },
@@ -144,6 +150,7 @@ enum AutoconfigSubcommand {
     /// Look up MX records for the given domain.
     Mx {
         domain: String,
+        /// DNS resolver (`host:port`).
         #[arg(long, default_value = DNS_SERVER)]
         server: String,
     },
@@ -152,6 +159,7 @@ enum AutoconfigSubcommand {
     /// domain.
     Mailconf {
         domain: String,
+        /// DNS resolver (`host:port`).
         #[arg(long, default_value = DNS_SERVER)]
         server: String,
     },

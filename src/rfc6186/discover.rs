@@ -21,7 +21,10 @@ use alloc::{
 };
 
 use domain::new::{
-    base::{Record, name::RevNameBuf},
+    base::{
+        Record,
+        name::{NameBuf, RevNameBuf},
+    },
     rdata::Srv,
 };
 use thiserror::Error;
@@ -162,7 +165,7 @@ impl DiscoverySrv {
     }
 }
 
-fn into_service(record: Record<RevNameBuf, Srv<domain::new::base::name::NameBuf>>) -> SrvService {
+fn into_service(record: Record<RevNameBuf, Srv<NameBuf>>) -> SrvService {
     SrvService {
         host: record
             .rdata

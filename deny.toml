@@ -5,7 +5,7 @@ allow-git = [
   "https://github.com/pimalaya/cli",
   "https://github.com/pimalaya/io-http",
   "https://github.com/pimalaya/stream",
-  "https://github.com/soywod/domain"
+  "https://github.com/soywod/domain",
 ]
 
 [licenses]
@@ -16,8 +16,5 @@ allow = [
   "ISC",
   "MIT",
   "MPL-2.0",
-  "Unicode-3.0"
+  "Unicode-3.0",
 ]
-
-[licenses.private]
-ignore = true

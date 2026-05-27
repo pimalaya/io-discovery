@@ -252,11 +252,12 @@ impl fmt::Display for OAuth2Config {
     }
 }
 
-// serde-xml-rs 0.8 wraps the text content of a leaf element in a
-// `#text` field. Unit enums deserialized from `<el>VARIANT</el>` need
-// a wrapper that unwraps that field before passing the variant name
-// to serde. These helpers are deserialize-only so JSON serialization
-// stays clean (`"socketType": "tls"` instead of `{"#text": "tls"}`).
+// HACK: serde-xml-rs 0.8 wraps the text content of a leaf element in
+// a `#text` field. Unit enums deserialized from `<el>VARIANT</el>`
+// need a wrapper that unwraps that field before passing the variant
+// name to serde. These helpers are deserialize-only so JSON
+// serialization stays clean (`"socketType": "tls"` instead of
+// `{"#text": "tls"}`).
 mod text_enum {
     use serde::{Deserialize, Deserializer};
 
@@ -412,9 +413,9 @@ mod tests {
         assert_eq!(oauth.token_url, "https://example.com/oauth2/token");
     }
 
-    // Minimal real-world shape: single IMAP + SMTP, no documentation,
-    // no OAuth2. Catches regressions where optional sections silently
-    // require defaulted structure.
+    // NOTE: minimal real-world shape: single IMAP + SMTP, no
+    // documentation, no OAuth2. Catches regressions where optional
+    // sections silently require defaulted structure.
     #[test]
     fn parses_minimal_clientconfig() {
         let xml = r#"<?xml version="1.0"?>
@@ -448,8 +449,8 @@ mod tests {
         assert_eq!(cfg.email_provider.outgoing_server.len(), 1);
     }
 
-    // Lowercase variant identifiers (no SSL/STARTTLS aliases) must
-    // still work via `rename_all = "camelCase"`.
+    // NOTE: lowercase variant identifiers (no SSL/STARTTLS aliases)
+    // must still work via `rename_all = "camelCase"`.
     #[test]
     fn accepts_camelcase_variants() {
         let xml = r#"<?xml version="1.0"?>

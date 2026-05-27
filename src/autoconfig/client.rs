@@ -25,10 +25,15 @@
 //! [`mx`]: DiscoveryAutoconfigClientStd::mx
 //! [`mailconf`]: DiscoveryAutoconfigClientStd::mailconf
 
+use std::io;
+
 use alloc::vec::Vec;
 
 use domain::new::{
-    base::{Record, name::RevNameBuf},
+    base::{
+        Record,
+        name::{NameBuf, RevNameBuf},
+    },
     rdata::Mx,
 };
 use thiserror::Error;
@@ -64,7 +69,7 @@ pub enum DiscoveryAutoconfigClientStdError {
     UrlParse(#[from] url::ParseError),
     /// Read or write against an open stream failed.
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     /// [`StreamPool::get`] failed (unknown scheme, factory error).
     #[error(transparent)]
     Pool(#[from] anyhow::Error),
@@ -206,10 +211,7 @@ impl DiscoveryAutoconfigClientStd {
     pub fn mx(
         &mut self,
         domain: &str,
-    ) -> Result<
-        Vec<Record<RevNameBuf, Mx<domain::new::base::name::NameBuf>>>,
-        DiscoveryAutoconfigClientStdError,
-    > {
+    ) -> Result<Vec<Record<RevNameBuf, Mx<NameBuf>>>, DiscoveryAutoconfigClientStdError> {
         let mut coroutine = DiscoveryDnsMx::new(domain, self.dns.clone());
         let mut buf = [0u8; READ_BUFFER_SIZE];
         let mut arg: Option<&[u8]> = None;

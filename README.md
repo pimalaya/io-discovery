@@ -4,7 +4,7 @@ Client library and CLI to discover PIM-related services, written in Rust.
 
 This repository ships three things:
 
-- Low-level **I/O-free** coroutines (no std state machines that emit read/write requests)
+- Low-level **I/O-free** coroutines (no_std state machines that emit read/write requests)
 - Mid-level clients, based on coroutines (standard, blocking)
 - High-level CLI, based on std clients
 
@@ -20,6 +20,7 @@ This repository ships three things:
   - [Library](#library)
   - [CLI](#cli)
 - [FAQ](#faq)
+- [License](#license)
 - [Social](#social)
 - [Sponsoring](#sponsoring)
 
@@ -33,42 +34,41 @@ This repository ships three things:
 - **RFC 6186 SRV** discovery support (requires `rfc6186` feature):
   - `_imap._tcp`, `_imaps._tcp`, `_submission._tcp` assembly into a single report
 - **PACC** discovery support <sup>[draft-ietf-mailmaint-pacc-02](https://datatracker.ietf.org/doc/html/draft-ietf-mailmaint-pacc-02)</sup> (requires `pacc` feature):
-  - well-known JSON configuration fetch
+  - Well-known JSON configuration fetch
   - SHA-256 digest verification against the `_ua-auto-config` TXT record
 - **TLS** support:
-  - Native TLS support via [native-tls](https://crates.io/crates/native-tls) crate (requires `native-tls` feature)
-  - Rust TLS support via [rustls](https://crates.io/crates/rustls) crate with:
-    - AWS crypto support (requires `rustls-aws` feature)
-    - Ring crypto support (requires `rustls-ring` feature)
-- **JSON** output with `--json`
+  - [Rustls](https://crates.io/crates/rustls) with ring crypto (requires `rustls-ring` feature)
+  - [Rustls](https://crates.io/crates/rustls) with aws crypto (requires `rustls-aws` feature)
+  - [Native TLS](https://crates.io/crates/native-tls) (requires `native-tls` feature)
+- **JSON** output via `--json`
 
-*The `io-discovery` library and CLI are written in [Rust](https://www.rust-lang.org/), and rely on [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to enable or disable functionalities. Default features can be found in the `features` section of the [`Cargo.toml`](https://github.com/pimalaya/io-discovery/blob/master/Cargo.toml), or on [docs.rs](https://docs.rs/crate/io-discovery/latest/features).*
+> [!TIP]
+> io-discovery is written in [Rust](https://www.rust-lang.org/) and uses [cargo features](https://doc.rust-lang.org/cargo/reference/features.html) to gate functionality. The default feature set is declared in [Cargo.toml](./Cargo.toml).
 
 ## Installation
 
 ### Pre-built binary
 
-The CLI binary `discover` has not been officially released yet. The only way to get a pre-built binary is to check the [releases](https://github.com/pimalaya/io-discovery/actions/workflows/releases.yml) GitHub workflow and look for the *Artifacts* section. You will find a pre-built binary matching your OS. These pre-built binaries are built from the `master` branch.
+The CLI binary `discover` has not been officially released yet. Check the [releases](https://github.com/pimalaya/io-discovery/actions/workflows/releases.yml) GitHub workflow and look for the *Artifacts* section. These pre-built binaries are built from the `master` branch.
 
-*Such binaries are built with the default cargo features, plus `cli`. If you need more features, please use another installation method.*
+> [!NOTE]
+> Pre-built binaries are built with the default cargo features, plus `cli`. If you need more features, please use another installation method.
 
 ### Cargo
 
-The CLI binary `discover` can be installed with [cargo](https://doc.rust-lang.org/cargo/):
-
-```ignore
+```sh
 cargo install io-discovery --locked
 ```
 
 You can also use the git repository for a more up-to-date (but less stable) version:
 
-```ignore
+```sh
 cargo install --locked --git https://github.com/pimalaya/io-discovery.git
 ```
 
-To use `io-discovery` as a library, add it to your `Cargo.toml`:
+To use io-discovery as a library, add it to your Cargo.toml:
 
-```toml,ignore
+```toml
 [dependencies]
 io-discovery = { version = "0.0.1", default-features = false, features = ["autoconfig", "pacc", "rfc6186", "client"] }
 ```
@@ -79,28 +79,22 @@ The `client` feature pulls in the `std`-blocking helpers. Drop it (and pick any 
 
 If you have the [Flakes](https://nixos.wiki/wiki/Flakes) feature enabled:
 
-```ignore
+```sh
 nix profile install github:pimalaya/io-discovery
 ```
 
-*Or, from within the source tree checkout:*
+Or run without installing:
 
-```ignore
-nix profile install
-```
-
-*You can also run the CLI directly without installing it:*
-
-```ignore
+```sh
 nix run github:pimalaya/io-discovery -- autoconfig <local-part> <domain>
 ```
 
 ### Sources
 
-```ignore
+```sh
 git clone https://github.com/pimalaya/io-discovery
 cd io-discovery
-nix develop --command cargo build --release
+nix run
 ```
 
 ## Usage
@@ -157,7 +151,7 @@ println!("{config:#?}");
 
 Run the full Thunderbird Autoconfiguration chain on `<local_part> <domain>`:
 
-```ignore
+```sh
 discover autoconfig user fastmail.com
 ```
 
@@ -165,7 +159,7 @@ The chain tries, in order: every ISP main URL (secure then plain), every `/.well
 
 Run a single primitive instead:
 
-```ignore
+```sh
 discover autoconfig user fastmail.com isp --secure
 discover autoconfig user fastmail.com isp-fallback --secure
 discover autoconfig user fastmail.com ispdb --secure
@@ -175,25 +169,25 @@ discover autoconfig user fastmail.com mailconf
 
 Run RFC 6186 SRV discovery (top-level subcommand):
 
-```ignore
+```sh
 discover srv fastmail.com
 ```
 
 Run PACC discovery:
 
-```ignore
+```sh
 discover pacc fastmail.com
 ```
 
 JSON output:
 
-```ignore
+```sh
 discover --json autoconfig user fastmail.com
 ```
 
 Pick a specific TLS stack and crypto provider:
 
-```ignore
+```sh
 discover --tls rustls --rustls-crypto ring autoconfig user fastmail.com
 discover --tls native-tls pacc fastmail.com
 discover --tls-cert /path/to/extra-root.pem autoconfig user fastmail.com
@@ -201,23 +195,23 @@ discover --tls-cert /path/to/extra-root.pem autoconfig user fastmail.com
 
 ## FAQ
 
-### How to debug the CLI?
+<details>
+  <summary>How to debug the CLI?</summary>
 
-Use `--log <level>` where `<level>` is one of `off`, `error`, `warn`, `info`, `debug`, `trace`:
+  Use `--log <level>` where `<level>` is one of `off`, `error`, `warn`, `info`, `debug`, `trace`:
 
-```ignore
-discover --log trace autoconfig user fastmail.com
-```
+  ```sh
+  discover --log trace autoconfig user fastmail.com
+  ```
 
-The `RUST_LOG` environment variable, when set, overrides `--log` and supports per-target filters (see the [`env_logger` documentation](https://docs.rs/env_logger/latest/env_logger/#enabling-logging)).
+  The `RUST_LOG` environment variable, when set, overrides `--log` and supports per-target filters (see the [`env_logger` documentation](https://docs.rs/env_logger/latest/env_logger/#enabling-logging)). `RUST_BACKTRACE=1` enables full error backtraces.
 
-Set `RUST_BACKTRACE=1` to enable full error backtraces, including source lines where the error originated from.
+  Logs are written to `stderr`, so they can be redirected easily to a file:
 
-Logs are written to `stderr`, so they can be redirected easily to a file:
-
-```ignore
-discover --log trace autoconfig user fastmail.com 2>/tmp/discover.log
-```
+  ```sh
+  discover --log trace autoconfig user fastmail.com 2>/tmp/discover.log
+  ```
+</details>
 
 ## License
 
@@ -251,5 +245,5 @@ If you appreciate the project, feel free to donate using one of the following pr
 [![Ko-fi](https://img.shields.io/badge/-Ko--fi-ff5e5a?logo=Ko-fi&logoColor=ffffff)](https://ko-fi.com/soywod)
 [![Buy Me a Coffee](https://img.shields.io/badge/-Buy%20Me%20a%20Coffee-ffdd00?logo=Buy%20Me%20A%20Coffee&logoColor=000000)](https://www.buymeacoffee.com/soywod)
 [![Liberapay](https://img.shields.io/badge/-Liberapay-f6c915?logo=Liberapay&logoColor=222222)](https://liberapay.com/soywod)
-[![thanks.dev](https://img.shields.io/badge/-thanks.dev-000000?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQuMDk3IiBoZWlnaHQ9IjE3LjU5NyIgY2xhc3M9InctMzYgbWwtMiBsZzpteC0wIHByaW50Om14LTAgcHJpbnQ6aW52ZXJ0IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik05Ljc4MyAxNy41OTdINy4zOThjLTEuMTY4IDAtMi4wOTItLjI5Ny0yLjc3My0uODktLjY4LS41OTMtMS4wMi0xLjQ2Mi0xLjAyLTIuNjA2di0xLjM0NmMwLTEuMDE4LS4yMjctMS43NS0uNjc4LTIuMTk1LS40NTItLjQ0Ni0xLjIzMi0uNjY5LTIuMzQtLjY2OUgwVjcuNzA1aC41ODdjMS4xMDggMCAxLjg4OC0uMjIyIDIuMzQtLjY2OC40NTEtLjQ0Ni42NzctMS4xNzcuNjc3LTIuMTk1VjMuNDk2YzAtMS4xNDQuMzQtMi4wMTMgMS4wMjEtMi42MDZDNS4zMDUuMjk3IDYuMjMgMCA3LjM5OCAwaDIuMzg1djEuOTg3aC0uOTg1Yy0uMzYxIDAtLjY4OC4wMjctLjk4LjA4MmExLjcxOSAxLjcxOSAwIDAgMC0uNzM2LjMwN2MtLjIwNS4xNTYtLjM1OC4zODQtLjQ2LjY4Mi0uMTAzLjI5OC0uMTU0LjY4Mi0uMTU0IDEuMTUxVjUuMjNjMCAuODY3LS4yNDkgMS41ODYtLjc0NSAyLjE1NS0uNDk3LjU2OS0xLjE1OCAxLjAwNC0xLjk4MyAxLjMwNXYuMjE3Yy44MjUuMyAxLjQ4Ni43MzYgMS45ODMgMS4zMDUuNDk2LjU3Ljc0NSAxLjI4Ny43NDUgMi4xNTR2MS4wMjFjMCAuNDcuMDUxLjg1NC4xNTMgMS4xNTIuMTAzLjI5OC4yNTYuNTI1LjQ2MS42ODIuMTkzLjE1Ny40MzcuMjYuNzMyLjMxMi4yOTUuMDUuNjIzLjA3Ni45ODQuMDc2aC45ODVabTE0LjMxNC03LjcwNmgtLjU4OGMtMS4xMDggMC0xLjg4OC4yMjMtMi4zNC42NjktLjQ1LjQ0NS0uNjc3IDEuMTc3LS42NzcgMi4xOTVWMTQuMWMwIDEuMTQ0LS4zNCAyLjAxMy0xLjAyIDIuNjA2LS42OC41OTMtMS42MDUuODktMi43NzQuODloLTIuMzg0di0xLjk4OGguOTg0Yy4zNjIgMCAuNjg4LS4wMjcuOTgtLjA4LjI5Mi0uMDU1LjUzOC0uMTU3LjczNy0uMzA4LjIwNC0uMTU3LjM1OC0uMzg0LjQ2LS42ODIuMTAzLS4yOTguMTU0LS42ODIuMTU0LTEuMTUydi0xLjAyYzAtLjg2OC4yNDgtMS41ODYuNzQ1LTIuMTU1LjQ5Ny0uNTcgMS4xNTgtMS4wMDQgMS45ODMtMS4zMDV2LS4yMTdjLS44MjUtLjMwMS0xLjQ4Ni0uNzM2LTEuOTgzLTEuMzA1LS40OTctLjU3LS43NDUtMS4yODgtLjc0NS0yLjE1NXYtMS4wMmMwLS40Ny0uMDUxLS44NTQtLjE1NC0xLjE1Mi0uMTAyLS4yOTgtLjI1Ni0uNTI2LS40Ni0uNjgyYTEuNzE5IDEuNzE5IDAgMCAwLS43MzctLjMwNyA1LjM5NSA1LjM5NSAwIDAgMC0uOTgtLjA4MmgtLjk4NFYwaDIuMzg0YzEuMTY5IDAgMi4wOTMuMjk3IDIuNzc0Ljg5LjY4LjU5MyAxLjAyIDEuNDYyIDEuMDIgMi42MDZ2MS4zNDZjMCAxLjAxOC4yMjYgMS43NS42NzggMi4xOTUuNDUxLjQ0NiAxLjIzMS42NjggMi4zNC42NjhoLjU4N3oiIGZpbGw9IiNmZmYiLz48L3N2Zz4=)](https://thanks.dev/soywod)
+[![thanks.dev](https://img.shields.io/badge/-thanks.dev-000000?logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQuMDk3IiBoZWlnaHQ9IjE3LjU5NyIgY2xhc3M9InctMzYgbWwtMiBsZzpteC0wIHByaW50Om14LTAgcHJpbnQ6aW52ZXJ0IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik05Ljc4MyAxNy41OTdINy4zOThjLTEuMTY4IDAtMi4wOTItLjI5Ny0yLjc3My0uODktLjY4LS41OTMtMS4wMi0xLjQ2Mi0xLjAyLTIuNjA2di0xLjM0NmMwLTEuMDE4LS4yMjctMS43NS0uNjc4LTIuMTk1LS40NTItLjQ0Ni0xLjIzMi0uNjY5LTIuMzQtLjY2OUgwVjcuNzA1aC41ODdjMS4xMDggMCAxLjg4OC0uMjIyIDIuMzQtLjY2OC40NTEtLjQ0Ni42NzctMS4xNzcuNjc3LTIuMTk1VjMuNDk2YzAtMS4xNDQuMzQtMi4wMTMgMS4wMjEtMi42MDZDNS4zMDUuMjk3IDYuMjMgMCA3LjM5OCAwaDIuMzg1djEuOTg3aC0uOTg1Yy0uMzYxIDAtLjY4OC4wMjctLjk4LjA4MmExLjcxOSAxLjcxOSAwIDAgMC0uNzM2LjMwN2MtLjIwNS4xNTYtLjM1OC4zODQtLjQ2LjY4Mi0uMTAzLjI5OC0uMTU0LjY4Mi0uMTU0IDEuMTUxVjUuMjNjMCAuODY3LS4yNDkgMS41ODYtLjc0NSAyLjE1NS0uNDk3LjU2OS0xLjE1OCAxLjAwNC0xLjk4MyAxLjMwNXYuMjE3Yy44MjUuMyAxLjQ4Ni43MzYgMS45ODMgMS4zMDUuNDk2LjU3Ljc0NSAxLjI4Ny43NDUgMi4xNTR2MS4wMjFjMCAuNDcuMDUxLjg1NC4xNTMgMS4xNTIuMTAzLjI5OC4yNTYuNTI1LjQ2MS42ODIuMTkzLjE1Ny40MzcuMjYuNzMyLjMxMi4yOTUuMDUuNjIzLjA3Ni45ODQuMDc2aC45ODVabTE0LjMxNC03LjcwNmgtLjU4OGMtMS4xMDggMC0xLjg4OC4yMjMtMi4zNC42NjktLjQ1LjQ0NS0uNjc3IDEuMTc3LS42NzcgMi4xOTVWMTQuMWMwIDEuMTQ0LS4zNCAyLjAxMy0xLjAyIDIuNjA2LS42OC41OTMtMS42MDUuODktMi43NzQuODloLTIuMzg0di0xLjk4OGguOTg0Yy4zNjIgMCAuNjg4LS4wMjcuOTgtLjA4LjI5Mi0uMDU1LjUzOC0uMTU3LjczNy0uMzA4LjIwNC0uMTU3LjM1OC0uMzg0LjQ2LS42ODIuMTAzLS4yOTguMTU0LS42ODIuMTU0LTEuMTUydi0xLjAyYzAtLjg2OC4yNDgtMS41ODYuNzQ1LTIuMTU1LjQ5Ny0uNTcgMS4xNTgtMS4wMDQgMS45ODMtMS4zMDV2LS4yMTdjLS44MjUtLjMwMS0xLjQ4Ni0uNzM2LTEuOTgzLTEuMzA1LS40OTctLjU3LS43NDUtMS4yODgtLjc0NS0yLjE1NXYtMS4wMmMwLS40Ny0uMDUxLS44NTQtLjE1NC0xLjE1Mi0uMTAyLS4yOTgtLjI1Ni0uNTI2LS40Ni0uNjgyYTEuNzE5IDEuNzE5IDAgMCAwLS43MzctLjMwNyA1LjM5NSA1LjM5NSAwIDAgMC0uOTgtLjA4MmgtLjk4NFYwIDIuMzg0YzEuMTY5IDAgMi4wOTMuMjk3IDIuNzc0Ljg5LjY4LjU5MyAxLjAyIDEuNDYyIDEuMDIgMi42MDZ2MS4zNDZjMCAxLjAxOC4yMjYgMS43NS42NzggMi4xOTUuNDUxLjQ0NiAxLjIzMS42NjggMi4zNC42NjhoLjU4N3oiIGZpbGw9IiNmZmYiLz48L3N2Zz4=)](https://thanks.dev/soywod)
 [![PayPal](https://img.shields.io/badge/-PayPal-0079c1?logo=PayPal&logoColor=ffffff)](https://www.paypal.com/paypalme/soywod)

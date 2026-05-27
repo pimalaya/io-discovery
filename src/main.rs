@@ -21,7 +21,7 @@ use pimalaya_cli::{
 use pimalaya_stream::tls::{Rustls, RustlsCrypto, Tls, TlsProvider};
 
 fn main() {
-    let cli = DiscoverCli::parse();
+    let cli = Cli::parse();
 
     Logger::try_init(&cli.log).expect("init logger");
     let mut printer = StdoutPrinter::new(&cli.json);
@@ -36,9 +36,9 @@ fn main() {
 #[command(about = "CLI to discover PIM-related services")]
 #[command(author, version, long_version = long_version!())]
 #[command(propagate_version = true, infer_subcommands = true)]
-struct DiscoverCli {
+struct Cli {
     #[command(subcommand)]
-    pub command: DiscoverCommand,
+    pub command: Command,
     #[command(flatten)]
     pub tls: TlsFlags,
     #[command(flatten)]
@@ -48,7 +48,7 @@ struct DiscoverCli {
 }
 
 #[derive(Subcommand, Debug)]
-enum DiscoverCommand {
+enum Command {
     #[cfg(feature = "autoconfig")]
     Autoconfig(AutoconfigCommand),
     #[cfg(feature = "pacc")]
@@ -59,7 +59,7 @@ enum DiscoverCommand {
     Manuals(ManualCommand),
 }
 
-impl DiscoverCommand {
+impl Command {
     pub fn execute(self, printer: &mut impl Printer, tls: &Tls) -> Result<()> {
         let _ = tls;
         match self {
@@ -69,8 +69,8 @@ impl DiscoverCommand {
             Self::Pacc(cmd) => cmd.execute(printer, tls),
             #[cfg(feature = "rfc6186")]
             Self::Srv(cmd) => cmd.execute(printer),
-            Self::Completions(cmd) => cmd.execute(printer, DiscoverCli::command()),
-            Self::Manuals(cmd) => cmd.execute(printer, DiscoverCli::command()),
+            Self::Completions(cmd) => cmd.execute(printer, Cli::command()),
+            Self::Manuals(cmd) => cmd.execute(printer, Cli::command()),
         }
     }
 }

@@ -48,11 +48,11 @@ impl TryFrom<&Url> for StreamPoolKey {
         let scheme = url.scheme().to_ascii_lowercase();
 
         let Some(host) = url.host_str() else {
-            bail!("stream pool URL `{url}` has no host");
+            bail!("Stream pool URL `{url}` has no host");
         };
 
         let Some(port) = url.port_or_known_default() else {
-            bail!("stream pool URL `{url}` has no known port")
+            bail!("Stream pool URL `{url}` has no known port")
         };
 
         Ok(StreamPoolKey {
@@ -90,11 +90,11 @@ impl StreamPool {
 
         pool.with_factory("tcp", |url: &Url| -> Result<TcpStream> {
             let Some(host) = url.host_str() else {
-                bail!("tcp URL `{url}` has no host");
+                bail!("TCP URL `{url}` has no host");
             };
 
             let Some(port) = url.port_or_known_default() else {
-                bail!("tcp URL `{url}` has no port");
+                bail!("TCP URL `{url}` has no port");
             };
 
             Ok(TcpStream::connect((host, port))?)
@@ -132,17 +132,17 @@ impl StreamPool {
 
         self.with_factory("http", |url: &Url| -> Result<StreamStd> {
             let Some(host) = url.host_str() else {
-                bail!("http URL `{url}` has no host");
+                bail!("HTTP URL `{url}` has no host");
             };
             let port = url.port_or_known_default().unwrap_or(80);
-            Ok(StreamStd::connect_tcp(host, port)?)
+            StreamStd::connect_tcp(host, port)
         })
         .with_factory("https", move |url: &Url| -> Result<StreamStd> {
             let Some(host) = url.host_str() else {
-                bail!("https URL `{url}` has no host");
+                bail!("HTTPS URL `{url}` has no host");
             };
             let port = url.port_or_known_default().unwrap_or(443);
-            Ok(StreamStd::connect_tls(host, port, &tls)?)
+            StreamStd::connect_tls(host, port, &tls)
         })
     }
 
@@ -165,7 +165,7 @@ impl StreamPool {
 
             let stream = {
                 let Some(factory) = self.factories.get_mut(key.scheme.as_str()) else {
-                    bail!("no stream factory registered for scheme `{}`", key.scheme)
+                    bail!("No stream factory registered for scheme `{}`", key.scheme)
                 };
 
                 factory(url)?

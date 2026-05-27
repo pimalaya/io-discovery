@@ -2,7 +2,7 @@
 name = "io-discovery"
 description = "Client library and CLI to discover PIM-related services"
 version = "0.0.1"
-authors = ["Clément DOUIN <pimalaya.org@posteo.net>"]
+authors = ["soywod <pimalaya.org@posteo.net>"]
 rust-version = "1.87"
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -29,6 +29,12 @@ rustls-ring = ["stream", "pimalaya-stream/rustls-ring", "io-http/rustls-ring"]
 rustls-aws = ["stream", "pimalaya-stream/rustls-aws", "io-http/rustls-aws"]
 native-tls = ["stream", "pimalaya-stream/native-tls", "io-http/native-tls"]
 vendored = ["pimalaya-stream?/vendored", "io-http?/vendored"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
 
 [[example]]
 name = "autoconfig-mx"
@@ -67,6 +73,12 @@ sha2 = { version = "0.10", default-features = false, optional = true }
 subtle = { version = "2", default-features = false, optional = true }
 thiserror = { version = "2", default-features = false }
 url = { version = "2.2", default-features = false, optional = true }
+
+# [patch.crates-io]
+# domain = { git = "https://github.com/soywod/domain", branch = "new-srv" }
+# io-http.path = "../io-http"
+# pimalaya-cli.path = "../cli"
+# pimalaya-stream.path = "../stream"
 
 [patch.crates-io]
 domain = { git = "https://github.com/soywod/domain", branch = "new-srv" }
