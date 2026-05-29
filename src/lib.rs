@@ -10,9 +10,23 @@ extern crate std;
 
 #[cfg(feature = "autoconfig")]
 pub mod autoconfig;
+#[cfg(any(
+    feature = "autoconfig",
+    feature = "pacc",
+    feature = "rfc6186",
+    feature = "rfc6764"
+))]
+pub mod coroutine;
 #[cfg(feature = "pacc")]
 pub mod pacc;
 #[cfg(feature = "rfc6186")]
 pub mod rfc6186;
-#[cfg(any(feature = "autoconfig", feature = "pacc", feature = "rfc6186"))]
+#[cfg(feature = "rfc6764")]
+pub mod rfc6764;
+#[cfg(any(
+    feature = "autoconfig",
+    feature = "pacc",
+    feature = "rfc6186",
+    feature = "rfc6764"
+))]
 pub mod shared;

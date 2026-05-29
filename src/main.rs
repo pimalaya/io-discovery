@@ -8,6 +8,8 @@ use io_discovery::autoconfig::cli::AutoconfigCommand;
 use io_discovery::pacc::cli::PaccCommand;
 #[cfg(feature = "rfc6186")]
 use io_discovery::rfc6186::cli::SrvCommand;
+#[cfg(feature = "rfc6764")]
+use io_discovery::rfc6764::cli::Rfc6764Command;
 use pimalaya_cli::{
     clap::{
         args::{JsonFlag, LogFlags},
@@ -55,6 +57,8 @@ enum Command {
     Pacc(PaccCommand),
     #[cfg(feature = "rfc6186")]
     Srv(SrvCommand),
+    #[cfg(feature = "rfc6764")]
+    Rfc6764(Rfc6764Command),
     Completions(CompletionCommand),
     Manuals(ManualCommand),
 }
@@ -69,6 +73,8 @@ impl Command {
             Self::Pacc(cmd) => cmd.execute(printer, tls),
             #[cfg(feature = "rfc6186")]
             Self::Srv(cmd) => cmd.execute(printer),
+            #[cfg(feature = "rfc6764")]
+            Self::Rfc6764(cmd) => cmd.execute(printer),
             Self::Completions(cmd) => cmd.execute(printer, Cli::command()),
             Self::Manuals(cmd) => cmd.execute(printer, Cli::command()),
         }

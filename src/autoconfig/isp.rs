@@ -19,7 +19,6 @@
 use alloc::{
     format,
     string::{FromUtf8Error, String},
-    vec::Vec,
 };
 
 use thiserror::Error;
@@ -27,7 +26,8 @@ use url::{ParseError, Url};
 
 use crate::{
     autoconfig::types::Autoconfig,
-    shared::http::{HttpGet, HttpGetError, HttpGetResult},
+    coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield},
+    shared::http::{HttpGet, HttpGetError},
 };
 
 /// Errors that can occur during a single ISP autoconfig HTTP exchange.
@@ -39,21 +39,6 @@ pub enum DiscoveryIspError {
     Xml(#[source] serde_xml_rs::Error),
     #[error(transparent)]
     Http(#[from] HttpGetError),
-}
-
-/// Output emitted when the coroutine progresses or terminates.
-pub enum DiscoveryIspResult {
-    /// The fetch successfully decoded an autoconfig.
-    Ok(Autoconfig),
-    /// The fetch wants more bytes from the stream open on the URL
-    /// this coroutine was built with.
-    WantsRead,
-    /// The fetch wants the given bytes written to the stream open on
-    /// the URL this coroutine was built with.
-    WantsWrite(Vec<u8>),
-    /// The fetch failed; the runtime should drop this URL and try the
-    /// next one.
-    Err(DiscoveryIspError),
 }
 
 /// HTTP+XML fetch coroutine for a single ISP autoconfig URL.
@@ -121,25 +106,33 @@ impl DiscoveryIsp {
             get: HttpGet::new(url),
         }
     }
+}
 
-    /// Drives the fetch coroutine for one resume cycle.
-    pub fn resume(&mut self, arg: Option<&[u8]>) -> DiscoveryIspResult {
+impl DiscoveryCoroutine for DiscoveryIsp {
+    type Yield = DiscoveryYield;
+    type Return = Result<Autoconfig, DiscoveryIspError>;
+
+    fn resume(&mut self, arg: Option<&[u8]>) -> DiscoveryCoroutineState<Self::Yield, Self::Return> {
         match self.get.resume(arg) {
-            HttpGetResult::Ok(bytes) => {
+            DiscoveryCoroutineState::Yielded(y) => DiscoveryCoroutineState::Yielded(y),
+            DiscoveryCoroutineState::Complete(Err(err)) => {
+                DiscoveryCoroutineState::Complete(Err(err.into()))
+            }
+            DiscoveryCoroutineState::Complete(Ok(bytes)) => {
                 let body = match String::from_utf8(bytes) {
                     Ok(body) => body,
-                    Err(err) => return DiscoveryIspResult::Err(DiscoveryIspError::Utf8(err)),
+                    Err(err) => {
+                        return DiscoveryCoroutineState::Complete(Err(DiscoveryIspError::Utf8(
+                            err,
+                        )));
+                    }
                 };
 
                 match serde_xml_rs::from_str(&body) {
-                    Ok(autoconfig) => DiscoveryIspResult::Ok(autoconfig),
-                    Err(err) => DiscoveryIspResult::Err(DiscoveryIspError::Xml(err)),
+                    Ok(autoconfig) => DiscoveryCoroutineState::Complete(Ok(autoconfig)),
+                    Err(err) => DiscoveryCoroutineState::Complete(Err(DiscoveryIspError::Xml(err))),
                 }
             }
-
-            HttpGetResult::WantsRead => DiscoveryIspResult::WantsRead,
-            HttpGetResult::WantsWrite(bytes) => DiscoveryIspResult::WantsWrite(bytes),
-            HttpGetResult::Err(err) => DiscoveryIspResult::Err(err.into()),
         }
     }
 }

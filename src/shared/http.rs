@@ -8,16 +8,29 @@
 //! Body deserialization is the caller's responsibility: autoconfig
 //! parses the bytes as XML, PACC parses them as JSON and also keeps
 //! the raw bytes for digest verification.
+//!
+//! [`HttpGet`] sits at the io-http / io-discovery boundary: it wraps
+//! io-http's [`Http11Send`] and translates its
+//! [`HttpCoroutineState`](io_http::coroutine::HttpCoroutineState)
+//! into the io-discovery shape, tagging every yielded I/O step with
+//! the request [`Url`] so the std client can route through
+//! [`crate::shared::pool::StreamPool`].
 
 use alloc::{borrow::ToOwned, vec::Vec};
 
 use io_http::{
-    rfc9110::request::HttpRequest,
-    rfc9112::send::{Http11Send, Http11SendError, Http11SendResult},
+    coroutine::{HttpCoroutine, HttpCoroutineState},
+    rfc9110::{
+        request::HttpRequest,
+        send::{HttpSendOutput, HttpSendYield},
+    },
+    rfc9112::send::{Http11Send, Http11SendError},
 };
 use log::trace;
 use thiserror::Error;
 use url::Url;
+
+use crate::coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield};
 
 /// Errors that can occur during a single HTTP GET exchange.
 #[derive(Debug, Error)]
@@ -30,23 +43,10 @@ pub enum HttpGetError {
     Http(#[from] Http11SendError),
 }
 
-/// Output emitted when the coroutine progresses or terminates.
-pub enum HttpGetResult {
-    /// The GET completed with a successful response; the raw body
-    /// bytes are returned for the caller to decode.
-    Ok(Vec<u8>),
-    /// The GET wants more bytes to be read from the socket.
-    WantsRead,
-    /// The GET wants the given bytes to be written to the socket.
-    WantsWrite(Vec<u8>),
-    /// The GET failed; the runtime should treat this URL as
-    /// unreachable.
-    Err(HttpGetError),
-}
-
 /// I/O-free coroutine that performs one HTTP GET and yields the
 /// response body as raw bytes.
 pub struct HttpGet {
+    url: Url,
     send: Http11Send,
 }
 
@@ -55,34 +55,52 @@ impl HttpGet {
     /// the same URL.
     pub fn new(url: Url) -> Self {
         let host = url.host_str().unwrap_or("127.0.0.1").to_owned();
-        let req = HttpRequest::get(url).header("Host", host);
+        let req = HttpRequest::get(url.clone()).header("Host", host);
 
         Self {
+            url,
             send: Http11Send::new(req),
         }
     }
+}
 
-    /// Drives the GET coroutine for one resume cycle.
-    pub fn resume(&mut self, arg: Option<&[u8]>) -> HttpGetResult {
+impl DiscoveryCoroutine for HttpGet {
+    type Yield = DiscoveryYield;
+    type Return = Result<Vec<u8>, HttpGetError>;
+
+    fn resume(&mut self, arg: Option<&[u8]>) -> DiscoveryCoroutineState<Self::Yield, Self::Return> {
         match self.send.resume(arg) {
-            Http11SendResult::Ok { response, .. } if !response.status.is_success() => {
+            HttpCoroutineState::Complete(Ok(HttpSendOutput { response, .. }))
+                if !response.status.is_success() =>
+            {
                 trace!("{response:?}");
-                HttpGetResult::Err(HttpGetError::Status(*response.status))
+                DiscoveryCoroutineState::Complete(Err(HttpGetError::Status(*response.status)))
             }
-            Http11SendResult::Ok { response, .. } => {
+            HttpCoroutineState::Complete(Ok(HttpSendOutput { response, .. })) => {
                 trace!("{response:?}");
-                HttpGetResult::Ok(response.body)
+                DiscoveryCoroutineState::Complete(Ok(response.body))
             }
-            Http11SendResult::WantsRead => HttpGetResult::WantsRead,
-            Http11SendResult::WantsWrite(bytes) => HttpGetResult::WantsWrite(bytes),
-            Http11SendResult::WantsRedirect { response, url, .. } => {
-                trace!("{response:?}");
-                HttpGetResult::Err(HttpGetError::Redirect {
-                    url,
-                    code: *response.status,
+            HttpCoroutineState::Yielded(HttpSendYield::WantsRead) => {
+                DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsRead {
+                    url: self.url.clone(),
                 })
             }
-            Http11SendResult::Err(err) => HttpGetResult::Err(err.into()),
+            HttpCoroutineState::Yielded(HttpSendYield::WantsWrite(bytes)) => {
+                DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsWrite {
+                    url: self.url.clone(),
+                    bytes,
+                })
+            }
+            HttpCoroutineState::Yielded(HttpSendYield::WantsRedirect { response, url, .. }) => {
+                trace!("{response:?}");
+                DiscoveryCoroutineState::Complete(Err(HttpGetError::Redirect {
+                    url,
+                    code: *response.status,
+                }))
+            }
+            HttpCoroutineState::Complete(Err(err)) => {
+                DiscoveryCoroutineState::Complete(Err(err.into()))
+            }
         }
     }
 }

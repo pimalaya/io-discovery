@@ -5,9 +5,10 @@
 //! (best first, per RFC 5321 §5.1).
 //!
 //! TCP framing (RFC 1035 §4.2.2: 2-byte big-endian length prefix) is
-//! handled inside the coroutine. Each yielded `WantsRead` /
-//! `WantsWrite` carries the `resolver` URL so the runtime can route
-//! bytes to the correct DNS-over-TCP stream.
+//! handled inside the coroutine. Each yielded
+//! [`DiscoveryYield::WantsRead`] / [`DiscoveryYield::WantsWrite`]
+//! carries the `resolver` URL so the runtime can route bytes to the
+//! correct DNS-over-TCP stream.
 
 use core::mem;
 
@@ -29,6 +30,8 @@ use domain::new::{
 use thiserror::Error;
 use url::Url;
 
+use crate::coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield};
+
 const QUERY_BUF_SIZE: usize = 4 * 1024;
 
 /// Errors that can occur during a single DNS MX exchange.
@@ -42,20 +45,6 @@ pub enum DiscoveryDnsMxError {
     InvalidResponse(String),
 }
 
-/// Output emitted when the coroutine progresses or terminates.
-pub enum DiscoveryDnsMxResult {
-    /// MX answer records sorted by ascending preference (best first);
-    /// empty when the response carries no MX answers.
-    Ok(Vec<Record<RevNameBuf, Mx<NameBuf>>>),
-    /// The coroutine wants more bytes from the stream open on `url`.
-    WantsRead { url: Url },
-    /// The coroutine wants the given bytes written to the stream open
-    /// on `url`.
-    WantsWrite { url: Url, bytes: Vec<u8> },
-    /// The coroutine failed.
-    Err(DiscoveryDnsMxError),
-}
-
 /// Internal state of the [`DiscoveryDnsMx`] coroutine.
 #[derive(Debug, Default)]
 enum State {
@@ -64,7 +53,7 @@ enum State {
     /// The query has been emitted; the coroutine is buffering response
     /// bytes until the 2-byte length prefix and full body are present.
     ParseResponse,
-    /// `Ok` or `Err` has already been returned.
+    /// `Complete` has already been returned.
     #[default]
     Done,
 }
@@ -97,21 +86,28 @@ impl DiscoveryDnsMx {
             response: Vec::new(),
         }
     }
+}
 
-    /// Advances the coroutine.
-    pub fn resume(&mut self, mut arg: Option<&[u8]>) -> DiscoveryDnsMxResult {
+impl DiscoveryCoroutine for DiscoveryDnsMx {
+    type Yield = DiscoveryYield;
+    type Return = Result<Vec<Record<RevNameBuf, Mx<NameBuf>>>, DiscoveryDnsMxError>;
+
+    fn resume(
+        &mut self,
+        mut arg: Option<&[u8]>,
+    ) -> DiscoveryCoroutineState<Self::Yield, Self::Return> {
         loop {
             if let Some(bytes) = self.wants_write.take() {
-                return DiscoveryDnsMxResult::WantsWrite {
+                return DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsWrite {
                     url: self.resolver.clone(),
                     bytes,
-                };
+                });
             }
 
             if mem::take(&mut self.wants_read) {
-                return DiscoveryDnsMxResult::WantsRead {
+                return DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsRead {
                     url: self.resolver.clone(),
-                };
+                });
             }
 
             match mem::take(&mut self.state) {
@@ -120,8 +116,9 @@ impl DiscoveryDnsMx {
                         Ok(qname) => qname,
                         Err(err) => {
                             let domain = mem::take(&mut self.domain);
-                            let err = DiscoveryDnsMxError::InvalidDomain(err, domain);
-                            return DiscoveryDnsMxResult::Err(err);
+                            return DiscoveryCoroutineState::Complete(Err(
+                                DiscoveryDnsMxError::InvalidDomain(err, domain),
+                            ));
                         }
                     };
 
@@ -141,8 +138,9 @@ impl DiscoveryDnsMx {
                     };
 
                     if let Err(err) = builder.push_question(&q) {
-                        let err = DiscoveryDnsMxError::QueryTooLarge(err);
-                        return DiscoveryDnsMxResult::Err(err);
+                        return DiscoveryCoroutineState::Complete(Err(
+                            DiscoveryDnsMxError::QueryTooLarge(err),
+                        ));
                     }
 
                     let msg_len = builder.finish().as_bytes().len();
@@ -176,8 +174,9 @@ impl DiscoveryDnsMx {
                     let parser = match MessageParser::new(&self.response[2..2 + body_len]) {
                         Ok(parser) => parser,
                         Err(err) => {
-                            let err = DiscoveryDnsMxError::InvalidResponse(err.to_string());
-                            return DiscoveryDnsMxResult::Err(err);
+                            return DiscoveryCoroutineState::Complete(Err(
+                                DiscoveryDnsMxError::InvalidResponse(err.to_string()),
+                            ));
                         }
                     };
 
@@ -203,7 +202,7 @@ impl DiscoveryDnsMx {
 
                     records.sort_by(|a, b| a.rdata.cmp(&b.rdata));
 
-                    return DiscoveryDnsMxResult::Ok(records);
+                    return DiscoveryCoroutineState::Complete(Ok(records));
                 }
 
                 State::Done => {

@@ -26,8 +26,9 @@ use thiserror::Error;
 use url::Url;
 
 use crate::{
+    coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield},
     pacc::{
-        discover::{DiscoveryPacc, DiscoveryPaccError, DiscoveryPaccResult},
+        discover::{DiscoveryPacc, DiscoveryPaccError},
         types::PaccConfig,
     },
     shared::pool::{Stream, StreamPool},
@@ -103,14 +104,14 @@ impl DiscoveryPaccClientStd {
 
         loop {
             match coroutine.resume(arg.take()) {
-                DiscoveryPaccResult::Ok(config) => return Ok(config),
-                DiscoveryPaccResult::Err(err) => return Err(err.into()),
-                DiscoveryPaccResult::WantsRead { url } => {
+                DiscoveryCoroutineState::Complete(Ok(config)) => return Ok(config),
+                DiscoveryCoroutineState::Complete(Err(err)) => return Err(err.into()),
+                DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsRead { url }) => {
                     let stream = self.pool.get(&url)?;
                     let n = stream.read(&mut buf)?;
                     arg = Some(&buf[..n]);
                 }
-                DiscoveryPaccResult::WantsWrite { url, bytes } => {
+                DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsWrite { url, bytes }) => {
                     let stream = self.pool.get(&url)?;
                     stream.write_all(&bytes)?;
                 }

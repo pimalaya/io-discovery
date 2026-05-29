@@ -15,7 +15,10 @@ use std::{
     net::TcpStream,
 };
 
-use io_discovery::autoconfig::mx::{DiscoveryDnsMx, DiscoveryDnsMxResult};
+use io_discovery::{
+    autoconfig::mx::DiscoveryDnsMx,
+    coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield},
+};
 use url::Url;
 
 fn main() {
@@ -32,15 +35,15 @@ fn main() {
 
     let records = loop {
         match coroutine.resume(arg.take()) {
-            DiscoveryDnsMxResult::Ok(records) => break records,
-            DiscoveryDnsMxResult::WantsWrite { bytes, .. } => {
+            DiscoveryCoroutineState::Complete(Ok(records)) => break records,
+            DiscoveryCoroutineState::Complete(Err(err)) => panic!("{err}"),
+            DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsWrite { bytes, .. }) => {
                 stream.write_all(&bytes).unwrap();
             }
-            DiscoveryDnsMxResult::WantsRead { .. } => {
+            DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsRead { .. }) => {
                 let n = stream.read(&mut buf).unwrap();
                 arg = Some(&buf[..n]);
             }
-            DiscoveryDnsMxResult::Err(err) => panic!("{err}"),
         }
     };
 

@@ -42,10 +42,11 @@ use thiserror::Error;
 use url::{ParseError, Url};
 
 use crate::{
+    coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield},
     pacc::types::PaccConfig,
     shared::{
-        dns::{DiscoveryDnsTxt, DiscoveryDnsTxtError, DiscoveryDnsTxtResult},
-        http::{HttpGet, HttpGetError, HttpGetResult},
+        dns::{DiscoveryDnsTxt, DiscoveryDnsTxtError},
+        http::{HttpGet, HttpGetError},
     },
 };
 
@@ -65,20 +66,6 @@ pub enum DiscoveryPaccError {
     Dns(#[from] DiscoveryDnsTxtError),
 }
 
-/// Output emitted when the coroutine progresses or terminates.
-pub enum DiscoveryPaccResult {
-    /// Discovery succeeded: the body matched the published digest and
-    /// parses as a valid configuration document.
-    Ok(PaccConfig),
-    /// The coroutine wants more bytes from the stream open on `url`.
-    WantsRead { url: Url },
-    /// The coroutine wants the given bytes written to the stream open
-    /// on `url`.
-    WantsWrite { url: Url, bytes: Vec<u8> },
-    /// Discovery failed.
-    Err(DiscoveryPaccError),
-}
-
 #[derive(Default)]
 enum State {
     Get,
@@ -94,8 +81,6 @@ pub struct DiscoveryPacc {
     fetch: HttpGet,
     verify: DiscoveryDnsTxt,
     raw_body: Vec<u8>,
-    http_url: Url,
-    resolver_url: Url,
 }
 
 impl DiscoveryPacc {
@@ -108,62 +93,54 @@ impl DiscoveryPacc {
     }
 
     /// Builds a discoverer for `domain`. The `resolver` URL must use
-    /// a `tcp://host:port` form and is yielded back on every DNS
-    /// `WantsRead` / `WantsWrite` so the runtime can route the bytes
-    /// to the correct stream.
+    /// a `tcp://host:port` form and is yielded back by the inner DNS
+    /// coroutine on every `WantsRead` / `WantsWrite` so the runtime
+    /// can route the bytes to the correct stream.
     pub fn new(domain: impl AsRef<str>, resolver: Url) -> Result<Self, DiscoveryPaccError> {
         let url = Self::url(domain.as_ref())?;
         let qname = format!("_ua-auto-config.{}", domain.as_ref().trim_matches('.'));
 
         Ok(Self {
             state: State::Get,
-            fetch: HttpGet::new(url.clone()),
-            verify: DiscoveryDnsTxt::new(qname),
+            fetch: HttpGet::new(url),
+            verify: DiscoveryDnsTxt::new(qname, resolver),
             raw_body: Vec::new(),
-            http_url: url,
-            resolver_url: resolver,
         })
     }
+}
 
-    /// Drives the discovery coroutine for one resume cycle.
-    pub fn resume(&mut self, mut arg: Option<&[u8]>) -> DiscoveryPaccResult {
+impl DiscoveryCoroutine for DiscoveryPacc {
+    type Yield = DiscoveryYield;
+    type Return = Result<PaccConfig, DiscoveryPaccError>;
+
+    fn resume(
+        &mut self,
+        mut arg: Option<&[u8]>,
+    ) -> DiscoveryCoroutineState<Self::Yield, Self::Return> {
         loop {
             match mem::take(&mut self.state) {
                 State::Get => match self.fetch.resume(arg.take()) {
-                    HttpGetResult::WantsRead => {
+                    DiscoveryCoroutineState::Yielded(y) => {
                         self.state = State::Get;
-                        return DiscoveryPaccResult::WantsRead {
-                            url: self.http_url.clone(),
-                        };
+                        return DiscoveryCoroutineState::Yielded(y);
                     }
-                    HttpGetResult::WantsWrite(bytes) => {
-                        self.state = State::Get;
-                        return DiscoveryPaccResult::WantsWrite {
-                            url: self.http_url.clone(),
-                            bytes,
-                        };
-                    }
-                    HttpGetResult::Ok(bytes) => {
+                    DiscoveryCoroutineState::Complete(Ok(bytes)) => {
                         self.raw_body = bytes;
                         self.state = State::Verify;
                     }
-                    HttpGetResult::Err(err) => return DiscoveryPaccResult::Err(err.into()),
+                    DiscoveryCoroutineState::Complete(Err(err)) => {
+                        return DiscoveryCoroutineState::Complete(Err(err.into()));
+                    }
                 },
                 State::Verify => match self.verify.resume(arg.take()) {
-                    DiscoveryDnsTxtResult::WantsRead => {
+                    DiscoveryCoroutineState::Yielded(y) => {
                         self.state = State::Verify;
-                        return DiscoveryPaccResult::WantsRead {
-                            url: self.resolver_url.clone(),
-                        };
+                        return DiscoveryCoroutineState::Yielded(y);
                     }
-                    DiscoveryDnsTxtResult::WantsWrite(bytes) => {
-                        self.state = State::Verify;
-                        return DiscoveryPaccResult::WantsWrite {
-                            url: self.resolver_url.clone(),
-                            bytes,
-                        };
+                    DiscoveryCoroutineState::Complete(Err(err)) => {
+                        return DiscoveryCoroutineState::Complete(Err(err.into()));
                     }
-                    DiscoveryDnsTxtResult::Ok(records) => {
+                    DiscoveryCoroutineState::Complete(Ok(records)) => {
                         for record in records {
                             let mut config = Vec::new();
 
@@ -228,15 +205,16 @@ impl DiscoveryPacc {
                             }
 
                             return match serde_json::from_slice(&self.raw_body) {
-                                Ok(config) => DiscoveryPaccResult::Ok(config),
-                                Err(err) => DiscoveryPaccResult::Err(DiscoveryPaccError::Json(err)),
+                                Ok(config) => DiscoveryCoroutineState::Complete(Ok(config)),
+                                Err(err) => DiscoveryCoroutineState::Complete(Err(
+                                    DiscoveryPaccError::Json(err),
+                                )),
                             };
                         }
 
-                        return DiscoveryPaccResult::Err(DiscoveryPaccError::NoValidTxtRecord);
-                    }
-                    DiscoveryDnsTxtResult::Err(err) => {
-                        return DiscoveryPaccResult::Err(err.into());
+                        return DiscoveryCoroutineState::Complete(Err(
+                            DiscoveryPaccError::NoValidTxtRecord,
+                        ));
                     }
                 },
                 State::Done => panic!("DiscoveryPacc::resume called after completion"),

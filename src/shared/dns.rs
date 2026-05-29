@@ -5,11 +5,10 @@
 //! delivered them (RFC 1035 imposes no priority for TXT).
 //!
 //! TCP framing (RFC 1035 §4.2.2: 2-byte big-endian length prefix) is
-//! handled inside the coroutine, so [`WantsRead`] / [`WantsWrite`]
-//! look exactly like an HTTP exchange.
-//!
-//! [`WantsRead`]: DiscoveryDnsTxtResult::WantsRead
-//! [`WantsWrite`]: DiscoveryDnsTxtResult::WantsWrite
+//! handled inside the coroutine. Each yielded
+//! [`DiscoveryYield::WantsRead`] / [`DiscoveryYield::WantsWrite`]
+//! carries the `resolver` URL so the runtime can route the bytes to
+//! the correct DNS-over-TCP stream.
 
 use core::mem;
 
@@ -33,6 +32,9 @@ use domain::{
     utils::dst::UnsizedCopy,
 };
 use thiserror::Error;
+use url::Url;
+
+use crate::coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield};
 
 /// Default DNS resolver (`host:port`) used by every CLI subcommand
 /// when `--server` is not given.
@@ -55,19 +57,6 @@ pub enum DiscoveryDnsTxtError {
     InvalidResponse(String),
 }
 
-/// Output emitted when the coroutine progresses or terminates.
-pub enum DiscoveryDnsTxtResult {
-    /// TXT answer records in the resolver's order; empty when the
-    /// response carries no TXT answers.
-    Ok(Vec<Record<RevNameBuf, Box<Txt>>>),
-    /// The coroutine wants more bytes from the socket.
-    WantsRead,
-    /// The coroutine wants the given bytes written to the socket.
-    WantsWrite(Vec<u8>),
-    /// The coroutine failed.
-    Err(DiscoveryDnsTxtError),
-}
-
 /// Internal state of the [`DiscoveryDnsTxt`] coroutine.
 #[derive(Debug, Default)]
 enum State {
@@ -76,7 +65,7 @@ enum State {
     /// The query has been emitted; the coroutine is buffering response
     /// bytes until the 2-byte length prefix and full body are present.
     ParseResponse,
-    /// `Ok` or `Err` has already been returned.
+    /// `Complete` has already been returned.
     #[default]
     Done,
 }
@@ -86,6 +75,7 @@ enum State {
 #[derive(Debug)]
 pub struct DiscoveryDnsTxt {
     domain: String,
+    resolver: Url,
     state: State,
     wants_read: bool,
     wants_write: Option<Vec<u8>>,
@@ -94,28 +84,44 @@ pub struct DiscoveryDnsTxt {
 
 impl DiscoveryDnsTxt {
     /// Returns a coroutine ready to build and emit a DNS TXT query
-    /// for `domain` on the first [`resume`].
+    /// for `domain` on the first [`resume`]. `resolver` must be a
+    /// `tcp://host:port` URL pointing at a DNS-over-TCP resolver; it
+    /// is yielded back on every `WantsRead` / `WantsWrite` so the
+    /// runtime can route the bytes to the correct stream.
     ///
     /// [`resume`]: DiscoveryDnsTxt::resume
-    pub fn new(domain: impl ToString) -> Self {
+    pub fn new(domain: impl ToString, resolver: Url) -> Self {
         Self {
             domain: domain.to_string(),
+            resolver,
             state: State::BuildQuery,
             wants_read: false,
             wants_write: None,
             response: Vec::new(),
         }
     }
+}
 
-    /// Advances the coroutine.
-    pub fn resume(&mut self, mut arg: Option<&[u8]>) -> DiscoveryDnsTxtResult {
+impl DiscoveryCoroutine for DiscoveryDnsTxt {
+    type Yield = DiscoveryYield;
+    type Return = Result<Vec<Record<RevNameBuf, Box<Txt>>>, DiscoveryDnsTxtError>;
+
+    fn resume(
+        &mut self,
+        mut arg: Option<&[u8]>,
+    ) -> DiscoveryCoroutineState<Self::Yield, Self::Return> {
         loop {
             if let Some(bytes) = self.wants_write.take() {
-                return DiscoveryDnsTxtResult::WantsWrite(bytes);
+                return DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsWrite {
+                    url: self.resolver.clone(),
+                    bytes,
+                });
             }
 
             if mem::take(&mut self.wants_read) {
-                return DiscoveryDnsTxtResult::WantsRead;
+                return DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsRead {
+                    url: self.resolver.clone(),
+                });
             }
 
             match mem::take(&mut self.state) {
@@ -124,8 +130,9 @@ impl DiscoveryDnsTxt {
                         Ok(qname) => qname,
                         Err(err) => {
                             let domain = mem::take(&mut self.domain);
-                            let err = DiscoveryDnsTxtError::InvalidDomain(err, domain);
-                            return DiscoveryDnsTxtResult::Err(err);
+                            return DiscoveryCoroutineState::Complete(Err(
+                                DiscoveryDnsTxtError::InvalidDomain(err, domain),
+                            ));
                         }
                     };
 
@@ -145,8 +152,9 @@ impl DiscoveryDnsTxt {
                     };
 
                     if let Err(err) = builder.push_question(&q) {
-                        let err = DiscoveryDnsTxtError::QueryTooLarge(err);
-                        return DiscoveryDnsTxtResult::Err(err);
+                        return DiscoveryCoroutineState::Complete(Err(
+                            DiscoveryDnsTxtError::QueryTooLarge(err),
+                        ));
                     }
 
                     let msg_len = builder.finish().as_bytes().len();
@@ -181,8 +189,9 @@ impl DiscoveryDnsTxt {
                     let parser = match MessageParser::new(&self.response[2..2 + body_len]) {
                         Ok(parser) => parser,
                         Err(err) => {
-                            let err = DiscoveryDnsTxtError::InvalidResponse(err.to_string());
-                            return DiscoveryDnsTxtResult::Err(err);
+                            return DiscoveryCoroutineState::Complete(Err(
+                                DiscoveryDnsTxtError::InvalidResponse(err.to_string()),
+                            ));
                         }
                     };
 
@@ -206,7 +215,7 @@ impl DiscoveryDnsTxt {
                         });
                     }
 
-                    return DiscoveryDnsTxtResult::Ok(records);
+                    return DiscoveryCoroutineState::Complete(Ok(records));
                 }
 
                 State::Done => {

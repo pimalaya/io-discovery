@@ -25,7 +25,10 @@ use log::trace;
 use thiserror::Error;
 use url::Url;
 
-use crate::shared::dns::{DiscoveryDnsTxt, DiscoveryDnsTxtError, DiscoveryDnsTxtResult};
+use crate::{
+    coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield},
+    shared::dns::{DiscoveryDnsTxt, DiscoveryDnsTxtError},
+};
 
 /// Errors that can occur during a single mailconf discovery.
 #[derive(Debug, Error)]
@@ -36,25 +39,10 @@ pub enum DiscoveryMailconfError {
     NoMailconfRecord,
 }
 
-/// Output emitted when the coroutine progresses or terminates.
-pub enum DiscoveryMailconfResult {
-    /// Discovery succeeded: a TXT record carried a valid `mailconf=`
-    /// URL.
-    Ok(Url),
-    /// The coroutine wants more bytes from the stream open on `url`.
-    WantsRead { url: Url },
-    /// The coroutine wants the given bytes written to the stream open
-    /// on `url`.
-    WantsWrite { url: Url, bytes: Vec<u8> },
-    /// Discovery failed.
-    Err(DiscoveryMailconfError),
-}
-
 /// I/O-free coroutine that performs a TXT lookup and extracts the
 /// first valid `mailconf=<URL>` value.
 pub struct DiscoveryMailconf {
     txt: DiscoveryDnsTxt,
-    resolver: Url,
 }
 
 impl DiscoveryMailconf {
@@ -65,23 +53,22 @@ impl DiscoveryMailconf {
     /// [`resume`]: DiscoveryMailconf::resume
     pub fn new(domain: impl ToString, resolver: Url) -> Self {
         Self {
-            txt: DiscoveryDnsTxt::new(domain),
-            resolver,
+            txt: DiscoveryDnsTxt::new(domain, resolver),
         }
     }
+}
 
-    /// Drives the discovery coroutine for one resume cycle.
-    pub fn resume(&mut self, arg: Option<&[u8]>) -> DiscoveryMailconfResult {
+impl DiscoveryCoroutine for DiscoveryMailconf {
+    type Yield = DiscoveryYield;
+    type Return = Result<Url, DiscoveryMailconfError>;
+
+    fn resume(&mut self, arg: Option<&[u8]>) -> DiscoveryCoroutineState<Self::Yield, Self::Return> {
         match self.txt.resume(arg) {
-            DiscoveryDnsTxtResult::WantsRead => DiscoveryMailconfResult::WantsRead {
-                url: self.resolver.clone(),
-            },
-            DiscoveryDnsTxtResult::WantsWrite(bytes) => DiscoveryMailconfResult::WantsWrite {
-                url: self.resolver.clone(),
-                bytes,
-            },
-            DiscoveryDnsTxtResult::Err(err) => DiscoveryMailconfResult::Err(err.into()),
-            DiscoveryDnsTxtResult::Ok(records) => {
+            DiscoveryCoroutineState::Yielded(y) => DiscoveryCoroutineState::Yielded(y),
+            DiscoveryCoroutineState::Complete(Err(err)) => {
+                DiscoveryCoroutineState::Complete(Err(err.into()))
+            }
+            DiscoveryCoroutineState::Complete(Ok(records)) => {
                 for record in records {
                     let mut joined = Vec::new();
 
@@ -104,10 +91,10 @@ impl DiscoveryMailconf {
                         continue;
                     };
 
-                    return DiscoveryMailconfResult::Ok(url);
+                    return DiscoveryCoroutineState::Complete(Ok(url));
                 }
 
-                DiscoveryMailconfResult::Err(DiscoveryMailconfError::NoMailconfRecord)
+                DiscoveryCoroutineState::Complete(Err(DiscoveryMailconfError::NoMailconfRecord))
             }
         }
     }

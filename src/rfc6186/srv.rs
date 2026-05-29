@@ -6,9 +6,10 @@
 //! name (RFC 2782 §3, "service not available") are dropped.
 //!
 //! TCP framing (RFC 1035 §4.2.2: 2-byte big-endian length prefix) is
-//! handled inside the coroutine. Each yielded `WantsRead` /
-//! `WantsWrite` carries the `resolver` URL so the runtime can route
-//! bytes to the correct DNS-over-TCP stream.
+//! handled inside the coroutine. Each yielded
+//! [`DiscoveryYield::WantsRead`] / [`DiscoveryYield::WantsWrite`]
+//! carries the `resolver` URL so the runtime can route bytes to the
+//! correct DNS-over-TCP stream.
 
 use core::mem;
 
@@ -30,6 +31,8 @@ use domain::new::{
 use thiserror::Error;
 use url::Url;
 
+use crate::coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield};
+
 const QUERY_BUF_SIZE: usize = 4 * 1024;
 
 /// SRV is not exposed by `domain::new::base::QType`, so we build it
@@ -47,21 +50,6 @@ pub enum DiscoveryDnsSrvError {
     InvalidResponse(String),
 }
 
-/// Output emitted when the coroutine progresses or terminates.
-pub enum DiscoveryDnsSrvResult {
-    /// SRV answer records sorted ascending by priority then descending
-    /// by weight (RFC 2782); empty when the response carries no usable
-    /// SRV answers.
-    Ok(Vec<Record<RevNameBuf, Srv<NameBuf>>>),
-    /// The coroutine wants more bytes from the stream open on `url`.
-    WantsRead { url: Url },
-    /// The coroutine wants the given bytes written to the stream open
-    /// on `url`.
-    WantsWrite { url: Url, bytes: Vec<u8> },
-    /// The coroutine failed.
-    Err(DiscoveryDnsSrvError),
-}
-
 /// Internal state of the [`DiscoveryDnsSrv`] coroutine.
 #[derive(Debug, Default)]
 enum State {
@@ -70,7 +58,7 @@ enum State {
     /// The query has been emitted; the coroutine is buffering response
     /// bytes until the 2-byte length prefix and full body are present.
     ParseResponse,
-    /// `Ok` or `Err` has already been returned.
+    /// `Complete` has already been returned.
     #[default]
     Done,
 }
@@ -104,21 +92,28 @@ impl DiscoveryDnsSrv {
             response: Vec::new(),
         }
     }
+}
 
-    /// Advances the coroutine.
-    pub fn resume(&mut self, mut arg: Option<&[u8]>) -> DiscoveryDnsSrvResult {
+impl DiscoveryCoroutine for DiscoveryDnsSrv {
+    type Yield = DiscoveryYield;
+    type Return = Result<Vec<Record<RevNameBuf, Srv<NameBuf>>>, DiscoveryDnsSrvError>;
+
+    fn resume(
+        &mut self,
+        mut arg: Option<&[u8]>,
+    ) -> DiscoveryCoroutineState<Self::Yield, Self::Return> {
         loop {
             if let Some(bytes) = self.wants_write.take() {
-                return DiscoveryDnsSrvResult::WantsWrite {
+                return DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsWrite {
                     url: self.resolver.clone(),
                     bytes,
-                };
+                });
             }
 
             if mem::take(&mut self.wants_read) {
-                return DiscoveryDnsSrvResult::WantsRead {
+                return DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsRead {
                     url: self.resolver.clone(),
-                };
+                });
             }
 
             match mem::take(&mut self.state) {
@@ -127,8 +122,9 @@ impl DiscoveryDnsSrv {
                         Ok(qname) => qname,
                         Err(err) => {
                             let raw = mem::take(&mut self.qname);
-                            let err = DiscoveryDnsSrvError::InvalidQname(err, raw);
-                            return DiscoveryDnsSrvResult::Err(err);
+                            return DiscoveryCoroutineState::Complete(Err(
+                                DiscoveryDnsSrvError::InvalidQname(err, raw),
+                            ));
                         }
                     };
 
@@ -148,8 +144,9 @@ impl DiscoveryDnsSrv {
                     };
 
                     if let Err(err) = builder.push_question(&q) {
-                        let err = DiscoveryDnsSrvError::QueryTooLarge(err);
-                        return DiscoveryDnsSrvResult::Err(err);
+                        return DiscoveryCoroutineState::Complete(Err(
+                            DiscoveryDnsSrvError::QueryTooLarge(err),
+                        ));
                     }
 
                     let msg_len = builder.finish().as_bytes().len();
@@ -183,8 +180,9 @@ impl DiscoveryDnsSrv {
                     let parser = match MessageParser::new(&self.response[2..2 + body_len]) {
                         Ok(parser) => parser,
                         Err(err) => {
-                            let err = DiscoveryDnsSrvError::InvalidResponse(err.to_string());
-                            return DiscoveryDnsSrvResult::Err(err);
+                            return DiscoveryCoroutineState::Complete(Err(
+                                DiscoveryDnsSrvError::InvalidResponse(err.to_string()),
+                            ));
                         }
                     };
 
@@ -219,7 +217,7 @@ impl DiscoveryDnsSrv {
                             .then_with(|| b.rdata.weight.cmp(&a.rdata.weight))
                     });
 
-                    return DiscoveryDnsSrvResult::Ok(records);
+                    return DiscoveryCoroutineState::Complete(Ok(records));
                 }
 
                 State::Done => {

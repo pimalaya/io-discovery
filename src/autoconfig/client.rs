@@ -41,11 +41,12 @@ use url::Url;
 
 use crate::{
     autoconfig::{
-        isp::{DiscoveryIsp, DiscoveryIspError, DiscoveryIspResult},
-        mailconf::{DiscoveryMailconf, DiscoveryMailconfError, DiscoveryMailconfResult},
-        mx::{DiscoveryDnsMx, DiscoveryDnsMxError, DiscoveryDnsMxResult},
+        isp::{DiscoveryIsp, DiscoveryIspError},
+        mailconf::{DiscoveryMailconf, DiscoveryMailconfError},
+        mx::{DiscoveryDnsMx, DiscoveryDnsMxError},
         types::Autoconfig,
     },
+    coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield},
     shared::pool::{Stream, StreamPool},
 };
 
@@ -126,25 +127,7 @@ impl DiscoveryAutoconfigClientStd {
         secure: bool,
     ) -> Result<Autoconfig, DiscoveryAutoconfigClientStdError> {
         let url = DiscoveryIsp::main_url(local_part, domain, secure)?;
-        let mut coroutine = DiscoveryIsp::new(url.clone());
-        let mut buf = [0u8; READ_BUFFER_SIZE];
-        let mut arg: Option<&[u8]> = None;
-
-        loop {
-            match coroutine.resume(arg.take()) {
-                DiscoveryIspResult::Ok(config) => return Ok(config),
-                DiscoveryIspResult::Err(err) => return Err(err.into()),
-                DiscoveryIspResult::WantsRead => {
-                    let stream = self.pool.get(&url)?;
-                    let n = stream.read(&mut buf)?;
-                    arg = Some(&buf[..n]);
-                }
-                DiscoveryIspResult::WantsWrite(bytes) => {
-                    let stream = self.pool.get(&url)?;
-                    stream.write_all(&bytes)?;
-                }
-            }
-        }
+        self.run(DiscoveryIsp::new(url))
     }
 
     /// Fetches the ISP fallback URL
@@ -155,25 +138,7 @@ impl DiscoveryAutoconfigClientStd {
         secure: bool,
     ) -> Result<Autoconfig, DiscoveryAutoconfigClientStdError> {
         let url = DiscoveryIsp::fallback_url(domain, secure)?;
-        let mut coroutine = DiscoveryIsp::new(url.clone());
-        let mut buf = [0u8; READ_BUFFER_SIZE];
-        let mut arg: Option<&[u8]> = None;
-
-        loop {
-            match coroutine.resume(arg.take()) {
-                DiscoveryIspResult::Ok(config) => return Ok(config),
-                DiscoveryIspResult::Err(err) => return Err(err.into()),
-                DiscoveryIspResult::WantsRead => {
-                    let stream = self.pool.get(&url)?;
-                    let n = stream.read(&mut buf)?;
-                    arg = Some(&buf[..n]);
-                }
-                DiscoveryIspResult::WantsWrite(bytes) => {
-                    let stream = self.pool.get(&url)?;
-                    stream.write_all(&bytes)?;
-                }
-            }
-        }
+        self.run(DiscoveryIsp::new(url))
     }
 
     /// Fetches the Thunderbird ISPDB
@@ -184,25 +149,7 @@ impl DiscoveryAutoconfigClientStd {
         secure: bool,
     ) -> Result<Autoconfig, DiscoveryAutoconfigClientStdError> {
         let url = DiscoveryIsp::db_url(domain, secure)?;
-        let mut coroutine = DiscoveryIsp::new(url.clone());
-        let mut buf = [0u8; READ_BUFFER_SIZE];
-        let mut arg: Option<&[u8]> = None;
-
-        loop {
-            match coroutine.resume(arg.take()) {
-                DiscoveryIspResult::Ok(config) => return Ok(config),
-                DiscoveryIspResult::Err(err) => return Err(err.into()),
-                DiscoveryIspResult::WantsRead => {
-                    let stream = self.pool.get(&url)?;
-                    let n = stream.read(&mut buf)?;
-                    arg = Some(&buf[..n]);
-                }
-                DiscoveryIspResult::WantsWrite(bytes) => {
-                    let stream = self.pool.get(&url)?;
-                    stream.write_all(&bytes)?;
-                }
-            }
-        }
+        self.run(DiscoveryIsp::new(url))
     }
 
     /// Returns the MX records for `domain`, sorted by ascending
@@ -212,44 +159,37 @@ impl DiscoveryAutoconfigClientStd {
         &mut self,
         domain: &str,
     ) -> Result<Vec<Record<RevNameBuf, Mx<NameBuf>>>, DiscoveryAutoconfigClientStdError> {
-        let mut coroutine = DiscoveryDnsMx::new(domain, self.dns.clone());
-        let mut buf = [0u8; READ_BUFFER_SIZE];
-        let mut arg: Option<&[u8]> = None;
-
-        loop {
-            match coroutine.resume(arg.take()) {
-                DiscoveryDnsMxResult::Ok(records) => return Ok(records),
-                DiscoveryDnsMxResult::Err(err) => return Err(err.into()),
-                DiscoveryDnsMxResult::WantsRead { url } => {
-                    let stream = self.pool.get(&url)?;
-                    let n = stream.read(&mut buf)?;
-                    arg = Some(&buf[..n]);
-                }
-                DiscoveryDnsMxResult::WantsWrite { url, bytes } => {
-                    let stream = self.pool.get(&url)?;
-                    stream.write_all(&bytes)?;
-                }
-            }
-        }
+        self.run(DiscoveryDnsMx::new(domain, self.dns.clone()))
     }
 
     /// Looks up the `mailconf=<URL>` TXT record on `domain` and
     /// returns the parsed redirect URL.
     pub fn mailconf(&mut self, domain: &str) -> Result<Url, DiscoveryAutoconfigClientStdError> {
-        let mut coroutine = DiscoveryMailconf::new(domain, self.dns.clone());
+        self.run(DiscoveryMailconf::new(domain, self.dns.clone()))
+    }
+
+    /// Drives any standard-shape [`DiscoveryCoroutine`]
+    /// (`Yield = DiscoveryYield`, `Return = Result<T, E>`) against the
+    /// pool until it terminates. Each yielded I/O step is routed to
+    /// the stream open on the matching URL.
+    fn run<C, T, E>(&mut self, mut coroutine: C) -> Result<T, DiscoveryAutoconfigClientStdError>
+    where
+        C: DiscoveryCoroutine<Yield = DiscoveryYield, Return = Result<T, E>>,
+        DiscoveryAutoconfigClientStdError: From<E>,
+    {
         let mut buf = [0u8; READ_BUFFER_SIZE];
         let mut arg: Option<&[u8]> = None;
 
         loop {
             match coroutine.resume(arg.take()) {
-                DiscoveryMailconfResult::Ok(url) => return Ok(url),
-                DiscoveryMailconfResult::Err(err) => return Err(err.into()),
-                DiscoveryMailconfResult::WantsRead { url } => {
+                DiscoveryCoroutineState::Complete(Ok(out)) => return Ok(out),
+                DiscoveryCoroutineState::Complete(Err(err)) => return Err(err.into()),
+                DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsRead { url }) => {
                     let stream = self.pool.get(&url)?;
                     let n = stream.read(&mut buf)?;
                     arg = Some(&buf[..n]);
                 }
-                DiscoveryMailconfResult::WantsWrite { url, bytes } => {
+                DiscoveryCoroutineState::Yielded(DiscoveryYield::WantsWrite { url, bytes }) => {
                     let stream = self.pool.get(&url)?;
                     stream.write_all(&bytes)?;
                 }

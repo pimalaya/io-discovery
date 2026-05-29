@@ -17,7 +17,6 @@ use core::mem;
 use alloc::{
     format,
     string::{String, ToString},
-    vec::Vec,
 };
 
 use domain::new::{
@@ -30,9 +29,12 @@ use domain::new::{
 use thiserror::Error;
 use url::Url;
 
-use crate::rfc6186::{
-    srv::{DiscoveryDnsSrv, DiscoveryDnsSrvError, DiscoveryDnsSrvResult},
-    types::{SrvReport, SrvService},
+use crate::{
+    coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield},
+    rfc6186::{
+        srv::{DiscoveryDnsSrv, DiscoveryDnsSrvError},
+        types::{SrvReport, SrvService},
+    },
 };
 
 /// Errors emitted by [`DiscoverySrv`].
@@ -44,23 +46,6 @@ pub enum DiscoverySrvError {
     Imaps(#[source] DiscoveryDnsSrvError),
     #[error("DNS SRV lookup for `_submission._tcp` failed: {0}")]
     Submission(#[source] DiscoveryDnsSrvError),
-}
-
-/// Output emitted when the coroutine progresses or terminates.
-pub enum DiscoverySrvResult {
-    /// All three SRV lookups completed; the report carries the best
-    /// record per service (or `None` for services that published no
-    /// usable record).
-    Ok(SrvReport),
-    /// The active sub-step wants more bytes from the stream open on
-    /// `url`.
-    WantsRead { url: Url },
-    /// The active sub-step wants the given bytes written to the
-    /// stream open on `url`.
-    WantsWrite { url: Url, bytes: Vec<u8> },
-    /// One of the SRV lookups failed before the report could be
-    /// assembled.
-    Err(DiscoverySrvError),
 }
 
 #[derive(Default)]
@@ -97,12 +82,16 @@ impl DiscoverySrv {
             report: SrvReport::default(),
         }
     }
+}
 
-    /// Drives the orchestrator for one resume cycle.
-    pub fn resume(&mut self, arg: Option<&[u8]>) -> DiscoverySrvResult {
+impl DiscoveryCoroutine for DiscoverySrv {
+    type Yield = DiscoveryYield;
+    type Return = Result<SrvReport, DiscoverySrvError>;
+
+    fn resume(&mut self, arg: Option<&[u8]>) -> DiscoveryCoroutineState<Self::Yield, Self::Return> {
         match mem::take(&mut self.state) {
             State::Imap(mut srv) => match srv.resume(arg) {
-                DiscoveryDnsSrvResult::Ok(records) => {
+                DiscoveryCoroutineState::Complete(Ok(records)) => {
                     self.report.imap = records.into_iter().next().map(into_service);
                     self.state = State::Imaps(DiscoveryDnsSrv::new(
                         format!("_imaps._tcp.{}", self.domain),
@@ -110,20 +99,16 @@ impl DiscoverySrv {
                     ));
                     self.resume(None)
                 }
-                DiscoveryDnsSrvResult::WantsRead { url } => {
+                DiscoveryCoroutineState::Yielded(y) => {
                     self.state = State::Imap(srv);
-                    DiscoverySrvResult::WantsRead { url }
+                    DiscoveryCoroutineState::Yielded(y)
                 }
-                DiscoveryDnsSrvResult::WantsWrite { url, bytes } => {
-                    self.state = State::Imap(srv);
-                    DiscoverySrvResult::WantsWrite { url, bytes }
-                }
-                DiscoveryDnsSrvResult::Err(err) => {
-                    DiscoverySrvResult::Err(DiscoverySrvError::Imap(err))
+                DiscoveryCoroutineState::Complete(Err(err)) => {
+                    DiscoveryCoroutineState::Complete(Err(DiscoverySrvError::Imap(err)))
                 }
             },
             State::Imaps(mut srv) => match srv.resume(arg) {
-                DiscoveryDnsSrvResult::Ok(records) => {
+                DiscoveryCoroutineState::Complete(Ok(records)) => {
                     self.report.imaps = records.into_iter().next().map(into_service);
                     self.state = State::Submission(DiscoveryDnsSrv::new(
                         format!("_submission._tcp.{}", self.domain),
@@ -131,33 +116,25 @@ impl DiscoverySrv {
                     ));
                     self.resume(None)
                 }
-                DiscoveryDnsSrvResult::WantsRead { url } => {
+                DiscoveryCoroutineState::Yielded(y) => {
                     self.state = State::Imaps(srv);
-                    DiscoverySrvResult::WantsRead { url }
+                    DiscoveryCoroutineState::Yielded(y)
                 }
-                DiscoveryDnsSrvResult::WantsWrite { url, bytes } => {
-                    self.state = State::Imaps(srv);
-                    DiscoverySrvResult::WantsWrite { url, bytes }
-                }
-                DiscoveryDnsSrvResult::Err(err) => {
-                    DiscoverySrvResult::Err(DiscoverySrvError::Imaps(err))
+                DiscoveryCoroutineState::Complete(Err(err)) => {
+                    DiscoveryCoroutineState::Complete(Err(DiscoverySrvError::Imaps(err)))
                 }
             },
             State::Submission(mut srv) => match srv.resume(arg) {
-                DiscoveryDnsSrvResult::Ok(records) => {
+                DiscoveryCoroutineState::Complete(Ok(records)) => {
                     self.report.submission = records.into_iter().next().map(into_service);
-                    DiscoverySrvResult::Ok(mem::take(&mut self.report))
+                    DiscoveryCoroutineState::Complete(Ok(mem::take(&mut self.report)))
                 }
-                DiscoveryDnsSrvResult::WantsRead { url } => {
+                DiscoveryCoroutineState::Yielded(y) => {
                     self.state = State::Submission(srv);
-                    DiscoverySrvResult::WantsRead { url }
+                    DiscoveryCoroutineState::Yielded(y)
                 }
-                DiscoveryDnsSrvResult::WantsWrite { url, bytes } => {
-                    self.state = State::Submission(srv);
-                    DiscoverySrvResult::WantsWrite { url, bytes }
-                }
-                DiscoveryDnsSrvResult::Err(err) => {
-                    DiscoverySrvResult::Err(DiscoverySrvError::Submission(err))
+                DiscoveryCoroutineState::Complete(Err(err)) => {
+                    DiscoveryCoroutineState::Complete(Err(DiscoverySrvError::Submission(err)))
                 }
             },
             State::Done => panic!("DiscoverySrv::resume called after completion"),

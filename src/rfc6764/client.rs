@@ -1,17 +1,16 @@
-//! # Standard, blocking RFC 6186 SRV discovery client
+//! # Standard, blocking RFC 6764 SRV discovery client
 //!
-//! [`DiscoverySrvClientStd`] drives the [`DiscoverySrv`] combined
-//! coroutine (three SRV queries → best-record-per-service assembly)
-//! end-to-end through a local [`StreamPool`]. One method:
+//! [`DiscoveryRfc6764ClientStd`] drives the [`DiscoveryRfc6764`]
+//! combined coroutine (four SRV queries: best-record-per-service
+//! assembly) end-to-end through a local [`StreamPool`]. One method:
 //! [`discover`].
 //!
 //! Only the default `tcp` factory is needed: SRV discovery never
 //! opens an HTTPS connection. Custom DNS transports plug in via
 //! [`with_factory`].
 //!
-//! [`new`]: DiscoverySrvClientStd::new
-//! [`with_factory`]: DiscoverySrvClientStd::with_factory
-//! [`discover`]: DiscoverySrvClientStd::discover
+//! [`with_factory`]: DiscoveryRfc6764ClientStd::with_factory
+//! [`discover`]: DiscoveryRfc6764ClientStd::discover
 
 use std::io;
 
@@ -20,22 +19,22 @@ use url::Url;
 
 use crate::{
     coroutine::{DiscoveryCoroutine, DiscoveryCoroutineState, DiscoveryYield},
-    rfc6186::{
-        discover::{DiscoverySrv, DiscoverySrvError},
-        types::SrvReport,
+    rfc6764::{
+        discover::{DiscoveryRfc6764, DiscoveryRfc6764Error},
+        types::Rfc6764Report,
     },
     shared::pool::{Stream, StreamPool},
 };
 
 const READ_BUFFER_SIZE: usize = 8 * 1024;
 
-/// Errors returned by [`DiscoverySrvClientStd::discover`].
+/// Errors returned by [`DiscoveryRfc6764ClientStd::discover`].
 #[derive(Debug, Error)]
-pub enum DiscoverySrvClientStdError {
-    /// The combined SRV coroutine errored out on one of its three
+pub enum DiscoveryRfc6764ClientStdError {
+    /// The combined SRV coroutine errored out on one of its four
     /// lookups.
     #[error(transparent)]
-    Discovery(#[from] DiscoverySrvError),
+    Discovery(#[from] DiscoveryRfc6764Error),
     /// Read or write against an open stream failed.
     #[error(transparent)]
     Io(#[from] io::Error),
@@ -44,20 +43,18 @@ pub enum DiscoverySrvClientStdError {
     Pool(#[from] anyhow::Error),
 }
 
-/// Std-blocking RFC 6186 SRV discovery client.
-pub struct DiscoverySrvClientStd {
+/// Std-blocking RFC 6764 SRV discovery client.
+pub struct DiscoveryRfc6764ClientStd {
     dns: Url,
     pool: StreamPool,
 }
 
-impl DiscoverySrvClientStd {
+impl DiscoveryRfc6764ClientStd {
     /// Builds a client that resolves SRV records through `dns` (a
     /// `tcp://host:port` URL pointing at a DNS-over-TCP resolver).
     /// The underlying pool is pre-populated with the default `tcp`
-    /// factory; SRV discovery never opens HTTPS, so [`with_tls`] (and
-    /// `http`/`https` factories) are unnecessary.
-    ///
-    /// [`with_tls`]: crate::pacc::client::DiscoveryPaccClientStd::with_tls
+    /// factory; SRV discovery never opens HTTPS, so HTTPS factories
+    /// are unnecessary.
     pub fn new(dns: Url) -> Self {
         Self {
             dns,
@@ -75,11 +72,14 @@ impl DiscoverySrvClientStd {
         self
     }
 
-    /// Runs the three RFC 6186 SRV lookups (`_imap._tcp`,
-    /// `_imaps._tcp`, `_submission._tcp`) on `domain` and returns
-    /// the best record per service.
-    pub fn discover(&mut self, domain: &str) -> Result<SrvReport, DiscoverySrvClientStdError> {
-        let mut coroutine = DiscoverySrv::new(domain, self.dns.clone());
+    /// Runs the four RFC 6764 SRV lookups (`_caldav._tcp`,
+    /// `_caldavs._tcp`, `_carddav._tcp`, `_carddavs._tcp`) on
+    /// `domain` and returns the best record per service.
+    pub fn discover(
+        &mut self,
+        domain: &str,
+    ) -> Result<Rfc6764Report, DiscoveryRfc6764ClientStdError> {
+        let mut coroutine = DiscoveryRfc6764::new(domain, self.dns.clone());
         let mut buf = [0u8; READ_BUFFER_SIZE];
         let mut arg: Option<&[u8]> = None;
 
