@@ -49,7 +49,7 @@ This repository ships three things:
 
 ### Pre-built binary
 
-The CLI binary `discover` has not been officially released yet. Check the [releases](https://github.com/pimalaya/pimconf/actions/workflows/releases.yml) GitHub workflow and look for the *Artifacts* section. These pre-built binaries are built from the `master` branch.
+The CLI binary `pimconf` has not been officially released yet. Check the [releases](https://github.com/pimalaya/pimconf/actions/workflows/releases.yml) GitHub workflow and look for the *Artifacts* section. These pre-built binaries are built from the `master` branch.
 
 > [!NOTE]
 > Pre-built binaries are built with the default cargo features, plus `cli`. If you need more features, please use another installation method.
@@ -152,7 +152,7 @@ println!("{config:#?}");
 Run the full Thunderbird Autoconfiguration chain on `<local_part> <domain>`:
 
 ```sh
-discover autoconfig user fastmail.com
+pimconf autoconfig user fastmail.com
 ```
 
 The chain tries, in order: every ISP main URL (secure then plain), every `/.well-known/` URL (secure then plain), the Thunderbird ISPDB, then re-tries the same against the MX target's parent domain, then logs the `mailconf=<URL>` TXT redirect if one is published.
@@ -160,37 +160,37 @@ The chain tries, in order: every ISP main URL (secure then plain), every `/.well
 Run a single primitive instead:
 
 ```sh
-discover autoconfig user fastmail.com isp --secure
-discover autoconfig user fastmail.com isp-fallback --secure
-discover autoconfig user fastmail.com ispdb --secure
-discover autoconfig user fastmail.com mx
-discover autoconfig user fastmail.com mailconf
+pimconf autoconfig user fastmail.com isp --secure
+pimconf autoconfig user fastmail.com isp-fallback --secure
+pimconf autoconfig user fastmail.com ispdb --secure
+pimconf autoconfig user fastmail.com mx
+pimconf autoconfig user fastmail.com mailconf
 ```
 
 Run RFC 6186 SRV discovery (top-level subcommand):
 
 ```sh
-discover srv fastmail.com
+pimconf srv fastmail.com
 ```
 
 Run PACC discovery:
 
 ```sh
-discover pacc fastmail.com
+pimconf pacc fastmail.com
 ```
 
 JSON output:
 
 ```sh
-discover --json autoconfig user fastmail.com
+pimconf --json autoconfig user fastmail.com
 ```
 
 Pick a specific TLS stack and crypto provider:
 
 ```sh
-discover --tls rustls --rustls-crypto ring autoconfig user fastmail.com
-discover --tls native-tls pacc fastmail.com
-discover --tls-cert /path/to/extra-root.pem autoconfig user fastmail.com
+pimconf --tls rustls --rustls-crypto ring autoconfig user fastmail.com
+pimconf --tls native-tls pacc fastmail.com
+pimconf --tls-cert /path/to/extra-root.pem autoconfig user fastmail.com
 ```
 
 ## FAQ
@@ -201,15 +201,15 @@ discover --tls-cert /path/to/extra-root.pem autoconfig user fastmail.com
   Use `--log <level>` where `<level>` is one of `off`, `error`, `warn`, `info`, `debug`, `trace`:
 
   ```sh
-  discover --log trace autoconfig user fastmail.com
+  pimconf --log trace autoconfig user fastmail.com
   ```
 
-  The `RUST_LOG` environment variable, when set, overrides `--log` and supports per-target filters (see the [`env_logger` documentation](https://docs.rs/env_logger/latest/env_logger/#enabling-logging)). `RUST_BACKTRACE=1` enables full error backtraces.
+  The `RUST_LOG` environment variable, when set, overrides `--log` and supports per-target filters (see the [env_logger](https://docs.rs/env_logger/latest/env_logger/#enabling-logging) documentation). `RUST_BACKTRACE=1` enables full error backtraces.
 
   Logs are written to `stderr`, so they can be redirected easily to a file:
 
   ```sh
-  discover --log trace autoconfig user fastmail.com 2>/tmp/discover.log
+  pimconf --log trace autoconfig user fastmail.com 2>/tmp/pimconf.log
   ```
 </details>
 
